@@ -41,6 +41,119 @@ void mymalloc_init() {
 	has_initialized = 1;
 }
 
+// Return true if given block is free. False otherwise. 
+int block_is_free(struct mem_control_block * block){
+	
+	if (block == NULL || block == (void*)0){
+		// Given parameter is not a valid block
+		return 0;
+	}
+
+	// Iterate through all free blocks and look for a match 
+	struct mem_control_block *m = free_list_start;
+	while(m != (void *)0){
+		if (m == block){
+			return 1;
+		}
+		m = m->next;
+	}
+	return 0;
+}
+
+// Return next neighbour of given block if it exists. Returns null if it does not exist. 
+// A neighbour can be free or in use. 
+struct mem_control_block* block_next_neighbour(struct mem_control_block * block){
+	
+	if (block == (void *)0){
+		// Given block can't be null pointer
+		return NULL;
+	}
+
+	void *block_end_address = ((void *)block) + sizeof(block) + block->size;
+	void *memory_end_address = ((void *)managed_memory_start) + MEM_SIZE;
+
+	if (block_end_address > managed_memory_start){
+		// This is the last block, so no next neighbours. 
+		return NULL;
+	}
+
+	// Next block should be directly next in memory, which is the end address of this block
+	return (struct mem_control_block*) block_end_address;
+
+}
+
+// Return previous neighbour of given block if it exists. Returns null if it does not exist. 
+// A neighbour can be free or in use. 
+struct mem_control_block* block_previous_neighbour(struct mem_control_block * block){
+	if (block == (void *)0){
+		// Given block can't be null pointer
+		return NULL;
+	}
+
+	if ((void *)block < managed_memory_start){
+		// This is the first block, so no previous neighbour
+		return NULL;
+	}
+	
+	// Iterate through all blocks and look for given block 
+	struct mem_control_block *current_block = managed_memory_start;
+	while(current_block != (void *)0){
+		struct mem_control_block* next_block = block_next_neighbour(current_block);
+
+		if (next_block == block){
+			// next_block is the given block, so current_block is previous neighbour to given block
+			return current_block;
+		}
+
+		// Match not found yet, continue with next block
+		current_block = next_block;
+	}
+
+	// Something wrong happened if we reached this. 
+	printf("ERROR: Unable to find previous neighbour of block %p", block);
+	return NULL;
+}
+
+// Return previous FREE block of given block if it exists. Returns null if it does not exist. 
+// This does not have to be a neighbour. 
+struct mem_control_block* block_previous_free_block(struct mem_control_block * block){
+	// Iterate through all previous blocks of given block, until a free one is found
+	struct mem_control_block* current_block = block_previous_neighbour(block);
+
+	do {
+		if (block_is_free(current_block)){
+			// The current block is free, return it!
+			return current_block;
+		}
+		// The current block was not free, check the previous
+		current_block = block_previous_neighbour(current_block);
+	} while(current_block != NULL);
+
+	// No previous free blocks have been found, return null
+	return NULL;
+}
+
+// Return next FREE block of given block if it exists. Returns null if it does not exist. 
+// This does not have to be a neighbour. 
+struct mem_control_block* block_next_free_block(struct mem_control_block * block){
+	// Iterate through all next blocks of given block, until a free one is found
+	struct mem_control_block* current_block = block_next_neighbour(block);
+
+	do {
+		if (block_is_free(current_block)){
+			// The current block is free, return it!
+			return current_block;
+		}
+		// The current block was not free, check the next
+		current_block = block_next_neighbour(current_block);
+	} while(current_block != NULL);
+
+	// No next free blocks have been found, return null
+	return NULL;
+}
+
+
+
 void *mymalloc(long numbytes) {
 	if (has_initialized == 0) {
 		mymalloc_init();
