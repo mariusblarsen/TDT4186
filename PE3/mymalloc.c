@@ -41,17 +41,27 @@ void mymalloc_init() {
 	has_initialized = 1;
 }
 
+// Was not sure how to test if a block is null, so this can be changed if syntax is incorrect. 
+int block_is_null(struct mem_control_block * block){
+	if (block == (struct mem_control_block *)0 || 
+		block == (void*)0 || 
+		block == NULL){
+		return 1;
+	}
+	return 0;
+}
+
 // Return true if given block is free. False otherwise. 
 int block_is_free(struct mem_control_block * block){
 	
-	if (block == NULL || block == (void*)0){
-		// Given parameter is not a valid block
+	if (block_is_null(block)){
+		// Given block can't be null
 		return 0;
 	}
 
 	// Iterate through all free blocks and look for a match 
 	struct mem_control_block *m = free_list_start;
-	while(m != (void *)0){
+	while(!block_is_null(m)){
 		if (m == block){
 			return 1;
 		}
@@ -64,8 +74,8 @@ int block_is_free(struct mem_control_block * block){
 // A neighbour can be free or in use. 
 struct mem_control_block* block_next_neighbour(struct mem_control_block * block){
 	
-	if (block == (void *)0){
-		// Given block can't be null pointer
+	if (block_is_null(block)){
+		// Given block can't be null
 		return NULL;
 	}
 
@@ -85,8 +95,8 @@ struct mem_control_block* block_next_neighbour(struct mem_control_block * block)
 // Return previous neighbour of given block if it exists. Returns null if it does not exist. 
 // A neighbour can be free or in use. 
 struct mem_control_block* block_previous_neighbour(struct mem_control_block * block){
-	if (block == (void *)0){
-		// Given block can't be null pointer
+	if (block_is_null(block)){
+		// Given block can't be null
 		return NULL;
 	}
 
@@ -97,7 +107,7 @@ struct mem_control_block* block_previous_neighbour(struct mem_control_block * bl
 	
 	// Iterate through all blocks and look for given block 
 	struct mem_control_block *current_block = managed_memory_start;
-	while(current_block != (void *)0){
+	while(!block_is_null(current_block)){
 		struct mem_control_block* next_block = block_next_neighbour(current_block);
 
 		if (next_block == block){
@@ -117,6 +127,11 @@ struct mem_control_block* block_previous_neighbour(struct mem_control_block * bl
 // Return previous FREE block of given block if it exists. Returns null if it does not exist. 
 // This does not have to be a neighbour. 
 struct mem_control_block* block_previous_free_block(struct mem_control_block * block){
+	if (block_is_null(block)){
+		// Given block can't be null
+		return NULL;
+	}
+	
 	// Iterate through all previous blocks of given block, until a free one is found
 	struct mem_control_block* current_block = block_previous_neighbour(block);
 
@@ -136,6 +151,27 @@ struct mem_control_block* block_previous_free_block(struct mem_control_block * b
 // Return next FREE block of given block if it exists. Returns null if it does not exist. 
 // This does not have to be a neighbour. 
 struct mem_control_block* block_next_free_block(struct mem_control_block * block){
+	
+	if (block_is_null(block)){
+		// Given block can't be null
+		return NULL;
+	}
+
+	struct mem_control_block* next_free_block = block->next;
+
+	if (block_is_null(next_free_block)){
+		// Return null instead of null pointer
+		return NULL;
+	}
+	return next_free_block;
+
+	/* 
+	TOOD: This can be removed in final version. 
+
+	This is a manual way of doing it, but not necessary as
+	block->next should return the same, if blocks are correct. 
+	Will leave it here for test purposes. 
+	
 	// Iterate through all next blocks of given block, until a free one is found
 	struct mem_control_block* current_block = block_next_neighbour(block);
 
@@ -150,6 +186,7 @@ struct mem_control_block* block_next_free_block(struct mem_control_block * block
 
 	// No next free blocks have been found, return null
 	return NULL;
+	*/
 }
 
 
@@ -163,57 +200,53 @@ void *mymalloc(long numbytes) {
 		numbytes++;
 	}
 
-	// Calculte the size required by data and metadata
-	long insert_data_size = numbytes + sizeof(struct mem_control_block);
+	// Calculate the size required by data and metadata
+	long total_block_size = numbytes + sizeof(struct mem_control_block);
 
-	// Create pointer to first free control block. 
-	struct mem_control_block *m;
-	m = free_list_start;
-	
-	// Pointer to previous block, to move its next-pointer.
-	struct mem_control_block *prev_m = (struct mem_control_block *)0;
-
-	// Look for available space. Linked list style.
-	while(m->size < insert_data_size){
-		// We dont have room, go to next
-		prev_m = m;
-		m = m->next;
-		// Next-pointer is NULL - no hit
-		if(m == (struct mem_control_block *)0){
-		return (void *)0;
+	// Iterate through all free blocks, and choose the first with enough space
+	struct mem_control_block* chosen_block;
+	struct mem_control_block* current_block = free_list_start;
+	while (!block_is_null(current_block)){
+		if (current_block->size >= total_block_size){
+			chosen_block = current_block;
+			break;
 		}
-  	}
-
-
-	// Now we have pointer to control block at start of free block.
-	// Find pointer to the start of the new free area.
-	void *start_of_free = (void *)m;
-	start_of_free += insert_data_size;
-
-	// At the start of the new free area, make a new control block. This controls the new free block.
-	struct mem_control_block *new_m = (struct mem_control_block *)start_of_free;
-	new_m->size = m->size - insert_data_size - sizeof(struct mem_control_block);
-	new_m->next = m->next;
-
-	// In case m was the first element in free list,
-	// Free list needs to be updated to point to new_m, the new free block.
-	if (m == free_list_start){
-		free_list_start = new_m;
-	}  
-
-	// Make sure the previous control also points to the free block
-	if (prev_m){  // In case prev_m doesn't exist.
-		prev_m->next = m->next;
+		current_block = block_next_free_block(current_block);
 	}
 
-	// Update size of m to numbytes.
-	m->size = numbytes;
-	// Also, m->next should point to the new_m, as its the first next free block.
-	m->next = new_m;
+	// Check that we found a block
+	if (block_is_null(chosen_block)){
+		printf("ERROR: Unable to find a suitable block for allocating");
+		return (void *)0;
+	}
+
+	// A suitable block has been chosen. 
+	// Split the chosen block into two new blocks, one occupied and one free. 
+	
+	struct mem_control_block* occupied_block = chosen_block;	// Same start as chosen block
+	struct mem_control_block* free_block = ((void*)occupied_block) + total_block_size;	// Starts where occupied block ends
+
+	// Update size and next attributes
+	occupied_block->size = numbytes;
+	occupied_block->next = free_block;
+	
+	free_block->size = chosen_block->size - total_block_size - sizeof(struct mem_control_block);
+	free_block->next = chosen_block->next;
+
+	// In case chosen block was the first element in free list,
+	// Free list needs to be updated to point to the new free block. (Not the occupied one)
+	if (chosen_block == free_list_start){
+		free_list_start = free_block;
+	}
+
+	// Make sure the previous block also points to the free block
+	struct mem_control_block* free_block_previous_neighbour = block_previous_neighbour(free_block);
+	if (free_block_previous_neighbour != NULL){  // In case prev doesn't exist.
+		free_block_previous_neighbour->next = free_block;
+	}
 
 	// Return pointer to allocated memory.
-	return m;
-
+	return occupied_block;
 }
 
 // Helper function for the free function.
