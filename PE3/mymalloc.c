@@ -616,7 +616,8 @@ void myfree_test_with_previous_occupied_next_free(){
 }
 
 int main(int argc, char **argv) {
-    // Choose test to run by adjusting comments. 
+    // Uncomment the test you want to run.
+	// Only run one test at a time. 
 
 	// mymalloc_test_with_20_bytes();
 	// mymalloc_test_with_65_kilobytes();
