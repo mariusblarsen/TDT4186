@@ -240,6 +240,56 @@ struct mem_control_block* block_next_free_block(struct mem_control_block * block
 	*/
 }
 
+void block_combine_free_blocks(struct mem_control_block * block1, struct mem_control_block * block2){
+
+	// Blocks can't be null
+	if (block_is_null(block1) || block_is_null(block2)){
+		printf("ERROR: Unable to combine free blocks. One of them is null. \n");
+		printf("Block1: %p\n", block1);
+		printf("Block2: %p\n", block2);
+		return;
+	}
+
+	// Both blocks must be free
+	if (!block_is_free(block1) || !block_is_free(block2)){
+		printf("ERROR: Unable to combine free blocks. One of them is not free. \n");
+		printf("Block1 free: %i\n", block_is_free(block1));
+		printf("Block2 free: %i\n", block_is_free(block2));
+		return;
+	}
+
+	// Blocks must be neighbours
+	if (block_next_neighbour(block1) != block2){
+		printf("ERROR: Unable to combine free blocks. Given blocks are not neighbours. \n");
+		printf("Block1: %p\n", block1);
+		printf("Block2: %p\n", block2);
+		return;
+	}
+
+	// Parameters have passed validation, combine the blocks. 
+	block1->size = block1->size + block2->size + sizeof(struct mem_control_block);
+	block1->next = block2->next;
+}
+
+// Search for two free neighbour blocks. Return the first block if any exists, null pointer oterwise. 
+struct mem_control_block* block_find_two_free_neighbours(){
+	struct mem_control_block* current_block = (struct mem_control_block*)managed_memory_start;
+	
+	// Iterate through all blocks
+	while(!block_is_null(current_block)){
+		// Find next neighbour block
+		struct mem_control_block* next_block = block_next_neighbour(current_block);
+		if (block_is_free(current_block) && block_is_free(next_block)){
+			// Both current and next block is free, return current block
+			return current_block;
+		}
+		// Continue and check next block
+		current_block = block_next_neighbour(current_block);
+	}
+
+	// No free blocks are found, return null pointer
+	return NULL;
+}
 
 void *mymalloc(long numbytes) {
 	if (has_initialized == 0) {
@@ -337,188 +387,40 @@ struct mem_control_block * get_next(struct mem_control_block * block){
 }
 
 void myfree(void *firstbyte) {
+	// Cast parameter to block pointer
+	struct mem_control_block* block = (struct mem_control_block*)firstbyte;
 
-  	// First, we need to look for adjacent free blocks, in case we need to combine.
-  	// Create pointer to first free control block. 
-  
-  	struct mem_control_block *block_to_free = (struct mem_control_block *)firstbyte;
-  	
-	// Find neighbour blocks
-	struct mem_control_block *next_neighbour = block_next_neighbour(block_to_free);
-	struct mem_control_block *previous_neighbour = block_previous_neighbour(block_to_free);
-
-	// Determine if neighbours are free
-	int next_is_free = next_neighbour != NULL && block_is_free(next_neighbour);
-	int previous_is_free = previous_neighbour != NULL && block_is_free(previous_neighbour);
-	
-    printf("next_is_free: %d\n", next_is_free);
-	printf("previous_is_free: %d\n", previous_is_free);
-
-	// CASE 1: Both neighbours are free
-	if (previous_is_free && next_is_free){
-		printf("This is case 1\n");
-		struct mem_control_block *combined_block = previous_neighbour;	// Start at previous neighbour
-
-		// Set size and next attributes 
-		combined_block->size = previous_neighbour->size + block_to_free->size + next_neighbour->size + 2 * sizeof(struct mem_control_block);
-		combined_block->next = next_neighbour->next;
-
-		// Update next pointer of the combined block's previous free block
-		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
-		if (combined_block_previous_free_neighbour != NULL){
-			combined_block_previous_free_neighbour->next = combined_block;
-		}
-
-		// Check if combined block is the first free block
-		if (combined_block < free_list_start){
-			free_list_start = combined_block;
-		}
+	// Given block can't be null
+	if (block_is_null(block)){
+		printf("ERROR: Unable to free block, given block is null (%p)", block);
+		return;
 	}
-  
-    // CASE 2: Previous free, next occupied
-    else if (previous_is_free && !next_is_free){
-		printf("This is case 2\n");
 
-		struct mem_control_block *combined_block = previous_neighbour;	// Start at previous neighbour
-
-		// Set size and next attributes 
-		combined_block->size = previous_neighbour->size + block_to_free->size + sizeof(struct mem_control_block);
-		combined_block->next = previous_neighbour->next;
-
-		// Update next pointer of the combined block's previous free block
-		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
-		if (combined_block_previous_free_neighbour != NULL){
-			combined_block_previous_free_neighbour->next = combined_block;
-		}
-
-		// Check if combined block is the first free block
-		if (combined_block < free_list_start){
-			free_list_start = combined_block;
-		}
-    }
-
-	// CASE 3: Previous occupied, next free
-	else if (!previous_is_free && next_is_free){
-		printf("This is case 3\n");
-
-		struct mem_control_block *combined_block = block_to_free;	// Start at block to free
-
-		// Set size and next attributes 
-		combined_block->size = block_to_free->size + next_neighbour->size + sizeof(struct mem_control_block);
-		combined_block->next = next_neighbour->next;
-
-		// Update next pointer of the combined block's previous free block
-		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
-		if (combined_block_previous_free_neighbour != NULL){
-			combined_block_previous_free_neighbour->next = combined_block;
-		}
-
-		// Check if combined block is the first free block
-		if (combined_block < free_list_start){
-			free_list_start = combined_block;
-		}
-  	}
-
-    // CASE 4: No neighbours are free
-  	else if (!previous_is_free && !next_is_free){
-		printf("This is case 4\n");
-
-		struct mem_control_block *combined_block = block_to_free;	// Start at block to free
-
-		// Set next attribute 
-		combined_block->next = block_next_free_block(block_to_free);
-
-		// Update next pointer of the combined block's previous free block
-		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
-		if (combined_block_previous_free_neighbour != NULL){
-			combined_block_previous_free_neighbour->next = combined_block;
-		}
-
-		// Check if combined block is the first free block
-		if (combined_block < free_list_start){
-			free_list_start = combined_block;
-		}
-  	}
-  	else {
-    	printf("ERROR: Unable to free block starting on address %p", firstbyte);
-  	}
-}
-
-void printfree(){
-	printf("-------------------\nPrinting free blocks:\n");
-	int counter = 1;
-    struct mem_control_block *m = free_list_start;
-	while(m != (void *)0){
-		printf("%d: %d (%p)\n", counter, m->size, m->next);
-		m = m->next;
-		counter++;
+	struct mem_control_block* previous_free_block = block_previous_free_block(block);
+	if (!block_is_null(previous_free_block)){
+		// Update previous free block to point to this block
+		block->next = previous_free_block->next;
+		previous_free_block->next = block; 
 	}
-	printf("-------------------\n");
-}	
+	else{
+		// No previous free blocks, which means this will be the new first free block
+		block->next = free_list_start;
+		free_list_start = block;
+	}
 
-
-
-void testCase_1(){
-  /* TEST CASE 1
-    Add a few bytes first, then try to insert a too large element.
-    We expect the few bytes to be success, then the last one to fail - as there is no room.
-  */
-  void *p;
-  p = mymalloc(42); // allocate 42 bytes
-  if (p != (void *)0){
-    printf("SUCCESS!\n");
-  } else{
-    printf("FAILED!\n");
-  }
-
-  
-  p = mymalloc(48); // allocate 42 bytes
-  if (p != (void *)0){
-    printf("SUCCESS!\n");
-  } else{
-    printf("FAILED!\n");
-  }
-
-  
-  p = mymalloc(64*1024); // allocate 42 bytes
-  if (p != (void *)0){
-    printf("SUCCESS!\n");
-  } else{
-    printf("FAILED!\n");
-  }
-}
-
-void testCase_2(){
-	// start by filling our area with some data. No edge cases.
-    mymalloc(42); // allocate 42 bytes
-	void *p2;
-	p2 = mymalloc(102); // allocate 42 bytes
-	void *p3;
-	p3 = mymalloc(17); // allocate 42 bytes
-	void *p4;
-	p4 = mymalloc(90); // allocate 42 bytes
-	void *p5;
-	p5 = mymalloc(24); // allocate 42 bytes
-
-	// Should only be one last big free block at the end.
-	printfree();
+	// The given block is now free. 
+	// Now we might have adjacent free blocks in our memory, which can be combined into larger blocks. 
 	
-	//Testing case 4: no free neighbours
-	myfree(p2);
-	printfree();
+	struct mem_control_block* free_block_with_free_neighbour = block_find_two_free_neighbours();
+	while(!block_is_null(free_block_with_free_neighbour)){
+		// Combine the two free blocks
+		block_combine_free_blocks(free_block_with_free_neighbour, block_next_neighbour(free_block_with_free_neighbour));
+
+		// Continue to next
+		free_block_with_free_neighbour = block_find_two_free_neighbours();
+	}
 
 
-	//Testing case 2: Previous free, next occupied
-	myfree(p3);
-    printfree();
-
-    //Testing case 3: Previous occupied, next free(rest of the heap)
-    myfree(p5);
-    printfree();
-    
-	//Testing case 1: Previous free, next free
-    myfree(p4);
-    printfree();
 
 }
 
@@ -569,13 +471,170 @@ void mymalloc_test_with_first_block_size(){
 	block_print_all();
 }
 
+
+void myfree_test_with_one_occupied_one_free(){
+	// Allocate new block
+	struct mem_control_block* allocated_block = mymalloc(64);
+	
+	printf("We should start with one block of size %i bytes, and one free block with the rest of memory.", allocated_block->size);
+	block_print_all();
+
+	// Free the allocated block
+	myfree(allocated_block);
+
+	printf("\nThe allocated block is then freed, which should result in one remaining block, with the entire memory range as the size.");
+	block_print_all();
+}
+
+void myfree_test_with_one_occupied(){
+	// Initalize to create the first block
+	if (has_initialized == 0) {
+		mymalloc_init();
+	}
+
+	// Retrieve the first block
+	struct mem_control_block* first_block = (struct mem_control_block*)managed_memory_start;
+	int size = first_block->size;
+
+	mymalloc(size);
+
+	printf("We should start with one block of size %i bytes, which is occupied.", size);
+	block_print_all();
+
+	// Free the allocated block
+	myfree(first_block);
+
+	printf("\nThe block is then freed, which should result in one remaining free block, with the entire memory range as the size.");
+	block_print_all();
+}
+
+void myfree_test_with_previous_free_next_occupied(){
+	// Initalize to create the first block
+	if (has_initialized == 0) {
+		mymalloc_init();
+	}
+
+	// Retrieve the first block
+	struct mem_control_block* first_block = (struct mem_control_block*)managed_memory_start;
+	int size = first_block->size;
+
+	// Allocate three blocks of memory
+	struct mem_control_block* block1 = mymalloc(64);
+	struct mem_control_block* block2 = mymalloc(64);
+	int last_block_size = block_next_free_block(block2)->size;
+	struct mem_control_block* block3 = mymalloc(last_block_size);
+
+	// Free the first block to get the desired initial state
+	myfree(block1);
+
+	printf("We should start with the first block beeing free, and the second and third occupied.");
+	block_print_all();
+
+	// Free the second block
+	myfree(block2);
+
+	printf("\nThe second block is then freed, which should result in one remaining free block at the start, followed by one occupied.");
+	block_print_all();
+}
+
+void myfree_test_with_previous_occupied_next_occupied(){
+	// Initalize to create the first block
+	if (has_initialized == 0) {
+		mymalloc_init();
+	}
+
+	// Retrieve the first block
+	struct mem_control_block* first_block = (struct mem_control_block*)managed_memory_start;
+	int size = first_block->size;
+
+	// Allocate three blocks of memory
+	struct mem_control_block* block1 = mymalloc(64);
+	struct mem_control_block* block2 = mymalloc(64);
+	int last_block_size = block_next_free_block(block2)->size;
+	struct mem_control_block* block3 = mymalloc(last_block_size);
+
+	printf("We should start with three occupied blocks.");
+	block_print_all();
+
+	// Free the second block
+	myfree(block2);
+
+	printf("\nThe second block is then freed, which should not lead to any combining, resulting in one free block with occupied neighbours.");
+	block_print_all();
+}
+
+void myfree_test_with_previous_free_next_free(){
+	// Initalize to create the first block
+	if (has_initialized == 0) {
+		mymalloc_init();
+	}
+
+	// Retrieve the first block
+	struct mem_control_block* first_block = (struct mem_control_block*)managed_memory_start;
+	int size = first_block->size;
+
+	// Allocate three blocks of memory
+	struct mem_control_block* block1 = mymalloc(64);
+	struct mem_control_block* block2 = mymalloc(64);
+	int last_block_size = block_next_free_block(block2)->size;
+	struct mem_control_block* block3 = mymalloc(last_block_size);
+
+	// Free first and third block
+	myfree(block1);
+	myfree(block3);
+
+	printf("We should start with one occupied block with two free neighbours.");
+	block_print_all();
+
+	// Free the second block
+	myfree(block2);
+
+	printf("\nThe second block is then freed, which should result in only one free block.");
+	block_print_all();
+}
+
+void myfree_test_with_previous_occupied_next_free(){
+	// Initalize to create the first block
+	if (has_initialized == 0) {
+		mymalloc_init();
+	}
+
+	// Retrieve the first block
+	struct mem_control_block* first_block = (struct mem_control_block*)managed_memory_start;
+	int size = first_block->size;
+
+	// Allocate three blocks of memory
+	struct mem_control_block* block1 = mymalloc(64);
+	struct mem_control_block* block2 = mymalloc(64);
+	int last_block_size = block_next_free_block(block2)->size;
+	struct mem_control_block* block3 = mymalloc(last_block_size);
+
+	// Free the third block
+	myfree(block3);
+
+	printf("We should start with two occupied blocks, followed by one free.");
+	block_print_all();
+
+	// Free the second block
+	myfree(block2);
+
+	printf("\nThe second block is then freed, which should result in one occupied block, followed by one free block.");
+	block_print_all();
+}
+
 int main(int argc, char **argv) {
     // Choose test to run by adjusting comments. 
 
 	// mymalloc_test_with_20_bytes();
 	// mymalloc_test_with_65_kilobytes();
-	mymalloc_test_with_first_block_size();
+	// mymalloc_test_with_first_block_size();
 
+	// myfree_test_with_one_occupied_one_free();
+	// myfree_test_with_one_occupied();
+	// myfree_test_with_previous_free_next_occupied();
+	// myfree_test_with_previous_occupied_next_occupied();
+	// myfree_test_with_previous_free_next_free();
+	myfree_test_with_previous_occupied_next_free();
     return 0;
 }
 
