@@ -5,6 +5,13 @@
 
 int has_initialized = 0;
 
+/* NOTES
+
+	-	For some reason sizeof(block_instance) != sizeof(struct mem_control_block) 
+		where block_instance is an instance of struct mem_control_block.  
+		Not quite sure why, but using the latter works. Maybe if next pointer is null, then it is not counted? 
+*/
+
 // our memory area we can allocate from, here 64 kB
 #define MEM_SIZE (64*1024)
 uint8_t heap[MEM_SIZE];
@@ -73,28 +80,72 @@ int block_is_free(struct mem_control_block * block){
 // Return next neighbour of given block if it exists. Returns null if it does not exist. 
 // A neighbour can be free or in use. 
 struct mem_control_block* block_next_neighbour(struct mem_control_block * block){
-	
+
 	if (block_is_null(block)){
 		// Given block can't be null
 		return NULL;
 	}
 
-	void *block_end_address = ((void *)block) + sizeof(block) + block->size;
+	void *block_end_address = ((void *)block) + sizeof(struct mem_control_block) + block->size;
 	void *memory_end_address = ((void *)managed_memory_start) + MEM_SIZE;
 
-	if (block_end_address > managed_memory_start){
+	if (block_end_address >= memory_end_address){
 		// This is the last block, so no next neighbours. 
 		return NULL;
 	}
 
 	// Next block should be directly next in memory, which is the end address of this block
 	return (struct mem_control_block*) block_end_address;
+}
 
+// Print all blocks 
+void block_print_all(){
+
+	if (has_initialized == 0) {
+		mymalloc_init();
+	}
+	// printf("\nNUMBER\tADDRESS\t\tSIZE\tNEXT\t\tTYPE\n");
+	printf("\n");
+	printf("|-------+-----------------------+-------+-----------------------+---------------|\n");
+	printf("| ID\t");
+	printf("| START\t\t\t");
+	printf("| SIZE\t");
+	printf("| NEXT\t\t\t");
+	printf("| TYPE\t\t|");
+	printf("\n");
+	printf("|-------+-----------------------+-------+-----------------------+---------------|\n");
+
+	struct mem_control_block* current_block = managed_memory_start;
+	int counter = 0;
+	while(!block_is_null(current_block)){
+		printf("| %d\t", counter);
+		printf("| %p\t", current_block);
+		printf("| %d\t", current_block->size);
+		printf("| %p\t", current_block->next);
+		
+		if (current_block->next == NULL){
+			printf("\t\t");
+		}
+
+		if (block_is_free(current_block)){
+			printf("| FREE\t\t|");
+		}
+		else{
+			printf("| OCCUPIED\t|");
+		}
+
+		printf("\n");
+
+		counter++;
+		current_block = block_next_neighbour(current_block);
+	}
+	printf("|-------+-----------------------+-------+-----------------------+---------------|\n");
 }
 
 // Return previous neighbour of given block if it exists. Returns null if it does not exist. 
 // A neighbour can be free or in use. 
 struct mem_control_block* block_previous_neighbour(struct mem_control_block * block){
+	
 	if (block_is_null(block)){
 		// Given block can't be null
 		return NULL;
@@ -120,7 +171,7 @@ struct mem_control_block* block_previous_neighbour(struct mem_control_block * bl
 	}
 
 	// Something wrong happened if we reached this. 
-	printf("ERROR: Unable to find previous neighbour of block %p", block);
+	printf("ERROR: Unable to find previous neighbour of block %p\n", block);
 	return NULL;
 }
 
@@ -189,6 +240,20 @@ struct mem_control_block* block_next_free_block(struct mem_control_block * block
 	*/
 }
 
+void block_update_free_list_start (){
+	struct mem_control_block* block = (struct mem_control_block*) managed_memory_start;
+	while(!block_is_null(block)){
+		if (block_is_free(block)){
+			free_list_start = block;
+			return;
+		}
+
+		block = block_next_neighbour(block);
+	}
+
+	// No blocks are free if we reached here
+	free_list_start = (struct mem_control_block*)0;
+}
 
 
 void *mymalloc(long numbytes) {
@@ -203,12 +268,16 @@ void *mymalloc(long numbytes) {
 	// Calculate the size required by data and metadata
 	long total_block_size = numbytes + sizeof(struct mem_control_block);
 
+	// Declare variable to hold chosen block. 
+	struct mem_control_block* chosen_block = (struct mem_control_block*)0;
+
 	// Iterate through all free blocks, and choose the first with enough space
-	struct mem_control_block* chosen_block;
 	struct mem_control_block* current_block = free_list_start;
+	int split_chosen_block = 1;
 	while (!block_is_null(current_block)){
-		if (current_block->size >= total_block_size){
+		if (current_block->size >= numbytes){
 			chosen_block = current_block;
+			split_chosen_block = (int)(current_block->size - numbytes - sizeof(struct mem_control_block)) > 0;
 			break;
 		}
 		current_block = block_next_free_block(current_block);
@@ -216,44 +285,70 @@ void *mymalloc(long numbytes) {
 
 	// Check that we found a block
 	if (block_is_null(chosen_block)){
-		printf("ERROR: Unable to find a suitable block for allocating");
+		printf("\nERROR: Unable to find a suitable block for allocating\n");
 		return (void *)0;
 	}
 
+
+	// Save original attributes of chosen block before we start changing things
+	int chosen_block_size = chosen_block->size;
+	struct mem_control_block* chosen_block_next = chosen_block->next;
+
+
 	// A suitable block has been chosen. 
-	// Split the chosen block into two new blocks, one occupied and one free. 
-	
-	struct mem_control_block* occupied_block = chosen_block;	// Same start as chosen block
-	struct mem_control_block* free_block = ((void*)occupied_block) + total_block_size;	// Starts where occupied block ends
+	if (split_chosen_block){
+		// Split the chosen block into two new blocks, one occupied and one free. 
+		struct mem_control_block* occupied_block = chosen_block;	// Same start as chosen block
+		struct mem_control_block* free_block = ((void*)occupied_block) + total_block_size;	// Starts where occupied block ends
 
-	// Update size and next attributes
-	occupied_block->size = numbytes;
-	occupied_block->next = free_block;
-	
-	free_block->size = chosen_block->size - total_block_size - sizeof(struct mem_control_block);
-	free_block->next = chosen_block->next;
+		// Update size and next attributes
+		occupied_block->size = numbytes;
+		occupied_block->next = free_block;
+		
+		free_block->size = chosen_block_size - occupied_block->size - sizeof(struct mem_control_block);
+		free_block->next = chosen_block_next;
 
-	// In case chosen block was the first element in free list,
-	// Free list needs to be updated to point to the new free block. (Not the occupied one)
-	if (chosen_block == free_list_start){
-		free_list_start = free_block;
+		// Check if chosen block was the first free block
+		if (chosen_block == free_list_start){
+			// Chosen block was the fist free block.  
+			// Free list needs to be updated to point to the new free block. (Not the occupied one)
+			free_list_start = free_block;
+		}
+
+		// Make sure the previous block also points to the free block
+		struct mem_control_block* free_block_previous_neighbour = block_previous_neighbour(free_block);
+		if (free_block_previous_neighbour != NULL){  // In case prev doesn't exist.
+			free_block_previous_neighbour->next = free_block;
+		}
 	}
+	else{
+		// Special case where we have to use all available space of the chosen block, 
+		// which means we don't split it. 
 
-	// Make sure the previous block also points to the free block
-	struct mem_control_block* free_block_previous_neighbour = block_previous_neighbour(free_block);
-	if (free_block_previous_neighbour != NULL){  // In case prev doesn't exist.
-		free_block_previous_neighbour->next = free_block;
+
+		// Check if chosen block was the first free block
+		if (chosen_block == free_list_start){
+			// Chosen block was the fist free block, which is now occupied. 
+			// Update the free list start to point to the next free block
+			free_list_start = chosen_block->next;
+		}
+
+		// Make sure the previous block also points to the next free block
+		struct mem_control_block* previous_neighbour = block_previous_neighbour(chosen_block);
+		if (previous_neighbour != NULL){  // In case prev doesn't exist.
+			previous_neighbour->next = chosen_block->next;
+		}
 	}
 
 	// Return pointer to allocated memory.
-	return occupied_block;
+	return chosen_block;
 }
 
 // Helper function for the free function.
 struct mem_control_block * get_next(struct mem_control_block * block){
 	// Return next control block. 
 	// TODO: return null if no next block exists
-	return (struct mem_control_block *)((void *)block + sizeof(block) + block->size);
+	return (struct mem_control_block *)((void *)block + sizeof(struct mem_control_block) + block->size);
 }
 
 void myfree(void *firstbyte) {
@@ -262,90 +357,107 @@ void myfree(void *firstbyte) {
   	// Create pointer to first free control block. 
   
   	struct mem_control_block *block_to_free = (struct mem_control_block *)firstbyte;
-  	// Potentially free neighbours.
-  	struct mem_control_block *next_control_block = (void *)0;
-  	struct mem_control_block *previous_control_block = (void *)0;
+  	
+	// Find neighbour blocks
+	struct mem_control_block *next_neighbour = block_next_neighbour(block_to_free);
+	struct mem_control_block *previous_neighbour = block_previous_neighbour(block_to_free);
 
-
-  	// Determine if the neighours are free. If not they are left as zero.
-  	struct mem_control_block *m = free_list_start;
-	while(m != (void *)0){
-		if (get_next(m) == block_to_free){
-			previous_control_block = m;
-		}
-		else if (get_next(block_to_free) == m){
-			next_control_block = m;
-		}
-		m = m->next;
-	}
-
-	int prev_free = previous_control_block != (void *)0;
-    int next_free = next_control_block != (void *)0;
-    printf("prev_free: %d\n", prev_free);
-    printf("next_free: %d\n", next_free);
+	// Determine if neighbours are free
+	int next_is_free = next_neighbour != NULL && block_is_free(next_neighbour);
+	int previous_is_free = previous_neighbour != NULL && block_is_free(previous_neighbour);
+	
+    printf("next_is_free: %d\n", next_is_free);
+	printf("previous_is_free: %d\n", previous_is_free);
 
 	// CASE 1: Both neighbours are free
-	if (prev_free && next_free){
+	if (previous_is_free && next_is_free){
 		printf("This is case 1\n");
-		previous_control_block->next = next_control_block->next;
-		// TODO: Find number of blocks, x*sizeof(struct)
-		previous_control_block->size = previous_control_block->size + block_to_free->size + next_control_block->size + 2 * sizeof(struct mem_control_block *);
+		struct mem_control_block *combined_block = previous_neighbour;	// Start at previous neighbour
+
+		// Set size and next attributes 
+		combined_block->size = previous_neighbour->size + block_to_free->size + next_neighbour->size + 2 * sizeof(struct mem_control_block);
+		combined_block->next = next_neighbour->next;
+
+		// Update next pointer of the combined block's previous free block
+		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
+		if (combined_block_previous_free_neighbour != NULL){
+			combined_block_previous_free_neighbour->next = combined_block;
+		}
+
+		// Check if combined block is the first free block
+		if (combined_block < free_list_start){
+			free_list_start = combined_block;
+		}
 	}
   
     // CASE 2: Previous free, next occupied
-    else if (prev_free && !next_free){
+    else if (previous_is_free && !next_is_free){
 		printf("This is case 2\n");
 
-        previous_control_block->size = previous_control_block->size + block_to_free->size + sizeof(struct mem_control_block *);
+		struct mem_control_block *combined_block = previous_neighbour;	// Start at previous neighbour
+
+		// Set size and next attributes 
+		combined_block->size = previous_neighbour->size + block_to_free->size + sizeof(struct mem_control_block);
+		combined_block->next = previous_neighbour->next;
+
+		// Update next pointer of the combined block's previous free block
+		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
+		if (combined_block_previous_free_neighbour != NULL){
+			combined_block_previous_free_neighbour->next = combined_block;
+		}
+
+		// Check if combined block is the first free block
+		if (combined_block < free_list_start){
+			free_list_start = combined_block;
+		}
     }
 
 	// CASE 3: Previous occupied, next free
-	else if (!prev_free && next_free){
+	else if (!previous_is_free && next_is_free){
 		printf("This is case 3\n");
 
-		// Make the previous free block point to the block being freed. 
-		struct mem_control_block *m = free_list_start;
-		while(m != (void *)0){
-			if (m == next_control_block){
-				m->next = block_to_free;
-				break;
-			}
-			m = m->next;
-    	}   
-		// Update size of the free area
-		block_to_free->size = block_to_free->size + next_control_block->size + sizeof(struct mem_control_block *);
+		struct mem_control_block *combined_block = block_to_free;	// Start at block to free
 
-		// In case this becomes the first free block.
-		if (free_list_start > block_to_free){
-			free_list_start = block_to_free;
+		// Set size and next attributes 
+		combined_block->size = block_to_free->size + next_neighbour->size + sizeof(struct mem_control_block);
+		combined_block->next = next_neighbour->next;
+
+		// Update next pointer of the combined block's previous free block
+		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
+		if (combined_block_previous_free_neighbour != NULL){
+			combined_block_previous_free_neighbour->next = combined_block;
+		}
+
+		// Check if combined block is the first free block
+		if (combined_block < free_list_start){
+			free_list_start = combined_block;
 		}
   	}
 
     // CASE 4: No neighbours are free
-  	else if (!prev_free && !next_free){
+  	else if (!previous_is_free && !next_is_free){
 		printf("This is case 4\n");
-		// Make the previous free block point to the block being freed. 
-		struct mem_control_block *m = free_list_start;
-		while(m != (void *)0){
-			if (m == next_control_block){
-				m->next = block_to_free;
-				break;
-			}
-			m = m->next;
-		}
-		// The size is good.
 
-		// In case this becomes the first free block.
-		if (free_list_start > block_to_free){
-			free_list_start = block_to_free;
+		struct mem_control_block *combined_block = block_to_free;	// Start at block to free
+
+		// Set next attribute 
+		combined_block->next = block_next_free_block(block_to_free);
+
+		// Update next pointer of the combined block's previous free block
+		struct mem_control_block *combined_block_previous_free_neighbour = block_previous_free_block(previous_neighbour);
+		if (combined_block_previous_free_neighbour != NULL){
+			combined_block_previous_free_neighbour->next = combined_block;
+		}
+
+		// Check if combined block is the first free block
+		if (combined_block < free_list_start){
+			free_list_start = combined_block;
 		}
   	}
   	else {
-    	printf("Failed to free");
+    	printf("ERROR: Unable to free block starting on address %p", firstbyte);
   	}
-
 }
-
 
 void printfree(){
 	printf("-------------------\nPrinting free blocks:\n");
@@ -425,21 +537,59 @@ void testCase_2(){
 
 }
 
+void mymalloc_test_with_20_bytes(){
+	
+	// Print all blocks to see our initial state
+	printf("We should start with only one block of free memory.");
+	block_print_all();
+
+	printf("\nAllocating 20 bytes of memory. This is not a multuple of 8, so we should actually expect 24 bytes to be allocated. \n");
+	mymalloc(20);
+
+
+	printf("After allocating, we should now have one occupied block and one free block.");
+	block_print_all();
+}
+
+void mymalloc_test_with_65_kilobytes(){
+	
+	// Print all blocks to see our initial state
+	printf("We should start with only one block of free memory.");
+	block_print_all();
+
+	printf("\nAllocating 65 kB of memory. The total memory size is 64kB, so it should not be space for 65 kB. Therefore we expect no memory to be allocated, and an error to be printed. \n");
+	mymalloc(65*1024);
+
+	printf("After allocating, we should now still have only one free block.");
+	block_print_all();
+}
+
+// Try to allocate the entire size of the first block. 
+void mymalloc_test_with_first_block_size(){
+	
+	// Print all blocks to see our initial state
+	printf("We should start with only one block of free memory.");
+	block_print_all();
+
+	int size = ((struct mem_control_block*)managed_memory_start)->size;
+
+	printf("\nAllocating %i bytes of memory (block_0->size). ", size);
+	printf("This is in other words the entire size of the free block. ");
+	printf("Therefore we expect the entire size of the free block to be allocated, and we should only have one block after allocating.  \n");
+	
+	mymalloc(size);
+
+
+	printf("After allocating, we should now have one occupied block. ");
+	block_print_all();
+}
 
 int main(int argc, char **argv) {
-    /* add your test cases here! */
-  
-    /* TEST CASE 1
-		Add a few bytes first, then try to insert a too large element.
-		We expect the few bytes to be success, then the last one to fail - as there is no room.
-    */
+    // Choose test to run by adjusting comments. 
 
-    //testCase_1();
-    
-    /* TEST CASE 2
-		Test all 4 cases in the free funciton.
-    */
-    testCase_2();
+	// mymalloc_test_with_20_bytes();
+	// mymalloc_test_with_65_kilobytes();
+	mymalloc_test_with_first_block_size();
 
     return 0;
 }
