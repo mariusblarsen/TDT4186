@@ -240,21 +240,6 @@ struct mem_control_block* block_next_free_block(struct mem_control_block * block
 	*/
 }
 
-void block_update_free_list_start (){
-	struct mem_control_block* block = (struct mem_control_block*) managed_memory_start;
-	while(!block_is_null(block)){
-		if (block_is_free(block)){
-			free_list_start = block;
-			return;
-		}
-
-		block = block_next_neighbour(block);
-	}
-
-	// No blocks are free if we reached here
-	free_list_start = (struct mem_control_block*)0;
-}
-
 
 void *mymalloc(long numbytes) {
 	if (has_initialized == 0) {
