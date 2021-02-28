@@ -151,7 +151,7 @@ struct mem_control_block* block_previous_neighbour(struct mem_control_block * bl
 		return NULL;
 	}
 
-	if ((void *)block < managed_memory_start){
+	if (block == managed_memory_start){
 		// This is the first block, so no previous neighbour
 		return NULL;
 	}
