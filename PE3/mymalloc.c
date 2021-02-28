@@ -271,7 +271,7 @@ void block_combine_free_blocks(struct mem_control_block * block1, struct mem_con
 	block1->next = block2->next;
 }
 
-// Search for two free neighbour blocks. Return the first block if any exists, null pointer oterwise. 
+// Search for two free neighbour blocks. Return the first block if any exists, null pointer otherwise. 
 struct mem_control_block* block_find_two_free_neighbours(){
 	struct mem_control_block* current_block = (struct mem_control_block*)managed_memory_start;
 	
@@ -377,13 +377,6 @@ void *mymalloc(long numbytes) {
 
 	// Return pointer to allocated memory.
 	return chosen_block;
-}
-
-// Helper function for the free function.
-struct mem_control_block * get_next(struct mem_control_block * block){
-	// Return next control block. 
-	// TODO: return null if no next block exists
-	return (struct mem_control_block *)((void *)block + sizeof(struct mem_control_block) + block->size);
 }
 
 void myfree(void *firstbyte) {
