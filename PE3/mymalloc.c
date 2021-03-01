@@ -9,7 +9,11 @@ int has_initialized = 0;
 
 	-	For some reason sizeof(block_instance) != sizeof(struct mem_control_block) 
 		where block_instance is an instance of struct mem_control_block.  
-		Not quite sure why, but using the latter works. Maybe if next pointer is null, then it is not counted? 
+		Probably the first returns the size of the pointer, as we only used pointers to block instances.
+
+	- The "next" pointer that you will see printed,
+		is by design only kept up to date for free blocks in the free block list,
+		so don't pay much attention to this pointer in occupied blocks.
 */
 
 // our memory area we can allocate from, here 64 kB
@@ -23,6 +27,8 @@ void *managed_memory_start;
 struct mem_control_block {
   int size;
   struct mem_control_block *next;  // Points to control block at start of next free area.
+  // Next ponter is only kept up to date for free-blocks, 
+  // as its only used by the free blocks in the free block list.
 };
 
 // pointer to start of our free list
@@ -105,6 +111,7 @@ void block_print_all(){
 		mymalloc_init();
 	}
 	// printf("\nNUMBER\tADDRESS\t\tSIZE\tNEXT\t\tTYPE\n");
+	printf("\nfree_list_start now points at: %p", free_list_start);
 	printf("\n");
 	printf("|-------+-----------------------+-------+-----------------------+---------------|\n");
 	printf("| ID\t");
@@ -208,6 +215,7 @@ struct mem_control_block* block_next_free_block(struct mem_control_block * block
 		return NULL;
 	}
 
+	// Next always points to the next free block by design.
 	struct mem_control_block* next_free_block = block->next;
 
 	if (block_is_null(next_free_block)){
@@ -215,29 +223,6 @@ struct mem_control_block* block_next_free_block(struct mem_control_block * block
 		return NULL;
 	}
 	return next_free_block;
-
-	/* 
-	TOOD: This can be removed in final version. 
-
-	This is a manual way of doing it, but not necessary as
-	block->next should return the same, if blocks are correct. 
-	Will leave it here for test purposes. 
-	
-	// Iterate through all next blocks of given block, until a free one is found
-	struct mem_control_block* current_block = block_next_neighbour(block);
-
-	do {
-		if (block_is_free(current_block)){
-			// The current block is free, return it!
-			return current_block;
-		}
-		// The current block was not free, check the next
-		current_block = block_next_neighbour(current_block);
-	} while(current_block != NULL);
-
-	// No next free blocks have been found, return null
-	return NULL;
-	*/
 }
 
 void block_combine_free_blocks(struct mem_control_block * block1, struct mem_control_block * block2){
@@ -266,12 +251,12 @@ void block_combine_free_blocks(struct mem_control_block * block1, struct mem_con
 		return;
 	}
 
-	// Parameters have passed validation, combine the blocks. 
+	// Parameters have passed validation, combine the blocks.
 	block1->size = block1->size + block2->size + sizeof(struct mem_control_block);
 	block1->next = block2->next;
 }
 
-// Search for two free neighbour blocks. Return the first block if any exists, null pointer otherwise. 
+// Search for two consecutive free neighbour blocks. Return the first block if any exists, null pointer otherwise. 
 struct mem_control_block* block_find_two_free_neighbours(){
 	struct mem_control_block* current_block = (struct mem_control_block*)managed_memory_start;
 	
@@ -291,6 +276,7 @@ struct mem_control_block* block_find_two_free_neighbours(){
 	return NULL;
 }
 
+// Allocates a piece of the heap to data of size "numbytes".
 void *mymalloc(long numbytes) {
 	if (has_initialized == 0) {
 		mymalloc_init();
@@ -379,6 +365,7 @@ void *mymalloc(long numbytes) {
 	return chosen_block;
 }
 
+// Frees up data in the heap, at pointer.
 void myfree(void *firstbyte) {
 	// Cast parameter to block pointer
 	struct mem_control_block* block = (struct mem_control_block*)firstbyte;
@@ -389,9 +376,9 @@ void myfree(void *firstbyte) {
 		return;
 	}
 
+	// Update previous free block to point to this block
 	struct mem_control_block* previous_free_block = block_previous_free_block(block);
 	if (!block_is_null(previous_free_block)){
-		// Update previous free block to point to this block
 		block->next = previous_free_block->next;
 		previous_free_block->next = block; 
 	}
@@ -417,20 +404,24 @@ void myfree(void *firstbyte) {
 
 }
 
+// Tests the myalloc, by allocating 20 bytes.
+// To test the padding of 8 bytes intervals
 void mymalloc_test_with_20_bytes(){
 	
 	// Print all blocks to see our initial state
-	printf("We should start with only one block of free memory.");
+	printf("We should start with only one block of free memory.\n");
 	block_print_all();
 
 	printf("\nAllocating 20 bytes of memory. This is not a multuple of 8, so we should actually expect 24 bytes to be allocated. \n");
 	mymalloc(20);
 
 
-	printf("After allocating, we should now have one occupied block and one free block.");
+	printf("After allocating, we should now have one occupied block and one free block.\n");
 	block_print_all();
 }
 
+// Try breaching the limit of the heap.
+// To test that no memory is written.
 void mymalloc_test_with_65_kilobytes(){
 	
 	// Print all blocks to see our initial state
@@ -444,7 +435,7 @@ void mymalloc_test_with_65_kilobytes(){
 	block_print_all();
 }
 
-// Try to allocate the entire size of the first block. 
+// Try to allocate exactlyt the size of the first block.
 void mymalloc_test_with_first_block_size(){
 	
 	// Print all blocks to see our initial state
@@ -464,7 +455,22 @@ void mymalloc_test_with_first_block_size(){
 	block_print_all();
 }
 
+// Try to run mymalloc multiple times to allocate multiple blocks. 
+void mymalloc_test_allocate_multiple_blocks(){
+	printf("We should start with only one block of free memory.\n");
+	block_print_all();
+	printf("Now, we add several blocks of different sizes. (20, 16, 19, 101)\n");
+	mymalloc(20);
+	mymalloc(16);
+	mymalloc(19);
+	mymalloc(101);
+	block_print_all();
+	printf("Some of the sizes are padded. Also, the next pointer is only valid (kept up to date) for free blocks.\n");
+	printf("(As its only used by free blocks in the free block list)\n");
 
+}
+
+// Test to free the only occupied block
 void myfree_test_with_one_occupied_one_free(){
 	// Allocate new block
 	struct mem_control_block* allocated_block = mymalloc(64);
@@ -479,6 +485,7 @@ void myfree_test_with_one_occupied_one_free(){
 	block_print_all();
 }
 
+// Test to free one block, who occupies entire memory.
 void myfree_test_with_one_occupied(){
 	// Initalize to create the first block
 	if (has_initialized == 0) {
@@ -501,6 +508,10 @@ void myfree_test_with_one_occupied(){
 	block_print_all();
 }
 
+// Tries to free a block, who has a free block before,
+// and an occpupied block after.
+// To test that the free blocks are merged correctly,
+// without updating next pointer.
 void myfree_test_with_previous_free_next_occupied(){
 	// Initalize to create the first block
 	if (has_initialized == 0) {
@@ -526,10 +537,15 @@ void myfree_test_with_previous_free_next_occupied(){
 	// Free the second block
 	myfree(block2);
 
-	printf("\nThe second block is then freed, which should result in one remaining free block at the start, followed by one occupied.");
+	printf("\nThe second block is then freed, which should result in one remaining free block at the start, followed by one occupied.\n");
+	printf("As we can see, combining free blocks also yields more efficient memory - as a control block can be overwritten.\n");
 	block_print_all();
 }
 
+// Tries to free a block, who has an occupied
+// block before and after.
+// To test that the previous free blocks next pointer,
+// points to the freed block.
 void myfree_test_with_previous_occupied_next_occupied(){
 	// Initalize to create the first block
 	if (has_initialized == 0) {
@@ -556,6 +572,8 @@ void myfree_test_with_previous_occupied_next_occupied(){
 	block_print_all();
 }
 
+// Tests freeing a block, surrounded by free blocks,
+// to see if they all combine into one, and to see that next-pointers are kept up to date.
 void myfree_test_with_previous_free_next_free(){
 	// Initalize to create the first block
 	if (has_initialized == 0) {
@@ -586,6 +604,7 @@ void myfree_test_with_previous_free_next_free(){
 	block_print_all();
 }
 
+// Tests freeing a block, where the previous block is occupied and the next is free.
 void myfree_test_with_previous_occupied_next_free(){
 	// Initalize to create the first block
 	if (has_initialized == 0) {
@@ -616,12 +635,18 @@ void myfree_test_with_previous_occupied_next_free(){
 }
 
 int main(int argc, char **argv) {
-    // Uncomment the test you want to run.
-	// Only run one test at a time. 
+    /* 	Uncomment the test you want to run. Only run one test at a time.
+		
+		Also: The "next" pointer that you will see printed,
+		 is by design only kept up to date for free blocks in the free block list,
+		 so don't pay much attention to this pointer in occupied blocks.
+
+	*/
 
 	// mymalloc_test_with_20_bytes();
 	// mymalloc_test_with_65_kilobytes();
 	// mymalloc_test_with_first_block_size();
+	// mymalloc_test_allocate_multiple_blocks();
 
 	// myfree_test_with_one_occupied_one_free();
 	// myfree_test_with_one_occupied();
