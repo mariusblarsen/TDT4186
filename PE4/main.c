@@ -46,13 +46,129 @@ char* replaceWord(const char* s, const char* oldW,
     return result; 
 } 
 
-char* read_command(){
+char* scan_input(){
     char input[256];
     printf("> ");
     scanf("%[^\n\r]", input);
 
     return strtok(input, split);
 }
+
+// Get the command part of given input
+char* get_command(char* input){
+    // Make a copy of the input to prevent side effects
+    char * input_copy = malloc(strlen(input) + 1); 
+    strcpy(input_copy, input);
+
+    char* command_part = strtok(input_copy, split);
+    
+    // Command part now has allocated entire length of input in memory. 
+    // But we only need the length of the actual command
+    char* command = malloc(strlen(command_part) + 1);
+    strcpy(command, command_part);
+
+    free(input_copy);
+
+    return command;
+}
+
+// Get the parameters part of the given input
+char* get_parameters(char* input){
+    // Make a copy of the input to prevent side effects
+    char * input_copy = malloc(strlen(input) + 1); 
+    strcpy(input_copy, input);
+
+    // Create temporary result to store parameters
+    // Allocate the entire size of the input (including termination char)
+    // This is only a temporary result, since we don't need the entire allocated size, 
+    // but at this point we do not know how much size is needed. 
+    char temp_result[strlen(input_copy) + 1];
+    
+    // First token is the command part
+    char* current_token = strtok(input_copy, split);
+
+    // Next token should be the first parameter
+    current_token = strtok(NULL, split);
+
+    int counter = 0;
+    int total_string_size = 0;
+    // Loop through all parameters, and add them to temp result
+    while(  current_token != NULL && 
+            strcmp(current_token, "<") != 0 && 
+            strcmp(current_token, ">") != 0)
+    {
+        // Add this token to the result
+        for (size_t i = 0; i < strlen(current_token); i++)
+        {
+            temp_result[counter++] = current_token[i];
+        }
+        // Append a space as a separator
+        temp_result[counter++] = ' ';
+
+        // Go to next token
+        current_token = strtok(NULL, split);
+    } 
+
+    // Replace the last space with string termination char
+    temp_result[counter] = '\0';
+
+    // Our result now contains the string that we want, 
+    // but it has some unused space. Let's fix that. 
+    // Now that we know the size, we can allocate the result 
+    // array with the correct size, to avoid wasting memory. 
+    // char* final_result = malloc(counter);
+    char* final_result = malloc(counter);
+
+    // Copy over the characters that we need
+    for (size_t i = 0; i < counter + 1; i++)
+    {
+        final_result[i] = temp_result[i];
+    }
+
+    // We no longer need the copied input, remove it from memory
+    free(input_copy);
+    
+    return final_result;
+}
+
+// Get the IO redirection part of the given input. 
+// Will return "<", ">" or NULL. 
+char* get_io_redirection_type(char* input){
+    if (strchr(input, '<') != NULL){
+        return (char*)"<";
+    }
+    if (strchr(input, '>') != NULL){
+        return (char*)">";
+    }
+    return (char*)NULL;
+}
+
+// Get the IO Redirection path of the given input. 
+// This is the path where the redirection should point. 
+char* get_io_redirection_path(char* input){
+    char* redirection_type = get_io_redirection_type(input);
+
+    if (redirection_type == (char*)NULL){
+        return (char*)NULL;
+    }
+
+    // Make a copy of the input to prevent side effects
+    char * input_copy = malloc(strlen(input) + 1); 
+    strcpy(input_copy, input);
+
+    char* token = strtok(input_copy, redirection_type);
+    token = strtok(NULL, redirection_type);
+
+    if (token == (char*)NULL) return (char*) NULL;
+
+    char* result = malloc(strlen(token) + 1);
+    strcpy(result, token);
+
+    free(input_copy);
+
+    return result;
+}
+
 
 void execute_command(char* command, char* parameters){
     // Used to keep track of zombies, to kill off.
@@ -103,78 +219,24 @@ void execute_command(char* command, char* parameters){
 
 }
 
-
-char* concat(const char *s1, const char *s2)
-{
-    char *result = malloc(strlen(s1) + strlen(s2) + 1); // +1 for the null-terminator
-    // in real code you would check for errors in malloc here
-    strcpy(result, s1);
-    strcat(result, s2);
-    return result;
-}
-
 int main(int argc, char **argv) {
 
-    //int execl_status = execl("hello_world", "", NULL);
-    //printf("what?");
-    //if (execl_status == -1){
-    //    printf("success?");
-    //}
+    char input[256];
+    printf("> ");
+    scanf("%[^\n\r]", input);
 
-    // First token = the command.
-    char * token = read_command();
-    char * parameters[256];
-    int counter = 0;
-    size_t total_string_len;
+    char* command = get_command(input);
+    printf("Command: %s\n", command);
 
-    // Command
-    printf("Command:\n");
-    printf("%s\n", token);
-    char * command = token;
-    
-    // Parameters
-    printf("Parameters:\n");
-    token = strtok(NULL, split);
+    char* parameters = get_parameters(input);
+    printf("Parameters: %s\n", parameters);
 
-    while(token != NULL && strcmp(token, "<") != 0 && strcmp(token, ">") != 0) {
-        printf("%s\n", token);
-        parameters[counter++] = token;
-        //total_string_len +=  sizeof(token) / sizeof(token[0]);
-        total_string_len += strlen(token);
-        token = strtok(NULL, " \t");
-    } 
-    
-    if(token != NULL){
-        // Redirection
-        printf("The redirection:\n");
-        printf("%s\n", token);
-        token = strtok(NULL, split);
-        if(token != NULL){
-            // Filename
-            printf("The filename:\n");
-            printf("%s\n", token);
-        }
-    }
+    char* redirection_type = get_io_redirection_type(input);
+    printf("Redirection type: %s\n", redirection_type);
 
-    // ADD ALL seperations " "
-    total_string_len += (size_t)(counter-1);
-    printf("Total string length: %zu\n", total_string_len);
+    char* redirection_path = get_io_redirection_path(input);
+    printf("Redirection path: %s\n", redirection_path);
 
-    char* parameter_string = concat("", parameters[0]);
-    for (int i = 1; i<counter; i++){
-        parameter_string = concat(parameter_string, parameters[i]); 
-        if (i != (counter-1)){
-            parameter_string = concat(parameter_string, " ");
-        }
-    }
-    parameter_string = concat(parameter_string,'\0');
-
-    printf("STRING IN MAIN():\n");
-    printf("%s\n", parameter_string);
-    
-    execute_command(command, parameter_string);
-    
-    free(parameter_string);
     
     return 0;
 }
