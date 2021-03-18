@@ -5,7 +5,8 @@
 #include <sys/wait.h>
 
 // Delimiter
-const char split[3] = " \t";
+#define DELIM " \t"
+
 
 char* replaceWord(const char* s, const char* oldW, 
                   const char* newW) 
@@ -51,7 +52,7 @@ char* scan_input(){
     printf("> ");
     scanf("%[^\n\r]", input);
 
-    return strtok(input, split);
+    return strtok(input, DELIM);
 }
 
 // Get the command part of given input
@@ -60,7 +61,7 @@ char* get_command(char* input){
     char * input_copy = malloc(strlen(input) + 1); 
     strcpy(input_copy, input);
 
-    char* command_part = strtok(input_copy, split);
+    char* command_part = strtok(input_copy, DELIM);
     
     // Command part now has allocated entire length of input in memory. 
     // But we only need the length of the actual command
@@ -85,10 +86,10 @@ char* get_parameters(char* input){
     char temp_result[strlen(input_copy) + 1];
     
     // First token is the command part
-    char* current_token = strtok(input_copy, split);
+    char* current_token = strtok(input_copy, DELIM);
 
     // Next token should be the first parameter
-    current_token = strtok(NULL, split);
+    current_token = strtok(NULL, DELIM);
 
     int counter = 0;
     int total_string_size = 0;
@@ -106,7 +107,7 @@ char* get_parameters(char* input){
         temp_result[counter++] = ' ';
 
         // Go to next token
-        current_token = strtok(NULL, split);
+        current_token = strtok(NULL, DELIM);
     } 
 
     // Replace the last space with string termination char
@@ -157,6 +158,7 @@ char* get_io_redirection_path(char* input){
     strcpy(input_copy, input);
 
     char* token = strtok(input_copy, redirection_type);
+    strcat(redirection_type, DELIM);
     token = strtok(NULL, redirection_type);
 
     if (token == (char*)NULL) return (char*) NULL;
