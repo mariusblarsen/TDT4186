@@ -173,6 +173,11 @@ char* get_io_redirection_path(char* input){
 
 
 void execute_command(char* command, char* parameters){
+    // Commands exist in /bin/ folder
+    // concats the command onto the path for bin-folder
+    char path[50] = "/bin/";
+    strcat(path, command);
+    
     // Used to keep track of zombies, to kill off.
     int child_status;
     // Kills all zombies.
@@ -205,7 +210,11 @@ void execute_command(char* command, char* parameters){
         
         // Run the command.
         // Execl replaces the child (data and all) with the command to be executed.
-        int execl_status = execl(command, parameters, NULL);
+        // excl(3) needs a path to an executable (such as 'sl'),
+        // then path
+        // TODO: Known error: parameters only work hardcoded, not passed
+        int execl_status = execl(path, command, parameters, NULL);
+        //int execl_status = execl(path, command, "-s", "-a", NULL);  // Works with ls
         if (execl_status == -1){
             printf("No success!\n");
         }
@@ -239,6 +248,6 @@ int main(int argc, char **argv) {
     char* redirection_path = get_io_redirection_path(input);
     printf("Redirection path: %s\n", redirection_path);
 
-    
+    execute_command(command, parameters);
     return 0;
 }
