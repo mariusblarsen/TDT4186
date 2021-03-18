@@ -177,8 +177,14 @@ void execute_command(char* command, char* parameters){
     // concats the command onto the path for bin-folder
     char path[50] = "/bin/";
     strcat(path, command);
-    
-    // Used to keep track of zombies, to kill off.
+
+    // TODO: Handle several inputs
+    // TODO: Parameters still contains space/tab
+    // TODO: Convert paramter |char*| to |char*, ..., char*| to pass it to execl
+    char param[64] = "";
+    strcpy(param, replaceWord(parameters, " ", ""));
+
+    // Used to keep track of zombies, to kill off. 
     int child_status;
     // Kills all zombies.
     do{
@@ -212,9 +218,13 @@ void execute_command(char* command, char* parameters){
         // Execl replaces the child (data and all) with the command to be executed.
         // excl(3) needs a path to an executable (such as 'sl'),
         // then path
-        // TODO: Known error: parameters only work hardcoded, not passed
-        int execl_status = execl(path, command, parameters, NULL);
-        //int execl_status = execl(path, command, "-s", "-a", NULL);  // Works with ls
+        // TODO: execl() needs to know number of parameters
+        int execl_status = -1;
+        if (strcmp(param, "")) {
+            execl_status = execl(path, command, param, NULL);
+        } else {
+            execl_status = execl(path, command, NULL);
+        }
         if (execl_status == -1){
             printf("No success!\n");
         }
