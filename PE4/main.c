@@ -234,40 +234,43 @@ char **get_args(char* input){
 
 
 int main(int argc, char **argv) {
-    char **args;
-    printf("$ ");
-
-    /**
-     * Read input from user
-    **/
-    int c;
-    char *buffer = malloc(sizeof(char) * 1024);
-    int pos = 0;
-
     while (1){
-        c = getchar();  // Read from stdin
+        char **args;
+        printf("$ ");
+        int c;
+        char *buffer = malloc(sizeof(char) * 1024);
+        int pos = 0;
 
-        if (c == '\n'){  // on enter
-            buffer[pos] = '\0';
-            break;
-        } else {
-            buffer[pos++] = c;
+        /**
+         * Read input from user
+        **/
+        while (1){
+            c = getchar();  // Read from stdin
+
+            if (c == '\n'){  // on enter
+                buffer[pos] = '\0';
+                break;
+            } else {
+                buffer[pos++] = c;
+            }
         }
-    }
-    
-    /**
-     * Parse input to args
-    **/
-    args = get_args(buffer);
-    printf("\n--args------\n");
-    for (int i = 0; i < 10; i++){
-        printf("%s", args[i]);
-        printf(" ");
-    }
-    printf("\n------------\n");
+        
+        /**
+         * Parse input to args
+        **/
+        args = get_args(buffer);
+        printf("\n--args------\n");
+        for (int i = 0; i < 10; i++){
+            printf("%s", args[i]);
+            printf(" ");
+        }
+        printf("\n------------\n");
 
-    // TODO: Handle I/O
-
-    execute(args);
+        // TODO: Handle I/O
+        /**
+         * Execure args
+        **/
+        execute(args);
+    }
     return 0;
 }
