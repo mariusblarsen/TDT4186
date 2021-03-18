@@ -146,19 +146,15 @@ char* get_io_redirection_type(char* input){
 
 // Get the IO Redirection path of the given input. 
 // This is the path where the redirection should point. 
-char* get_io_redirection_path(char* input){
-    char* redirection_type = get_io_redirection_type(input);
-
+char *get_io_redirection_path(char* input, char* redirection_type){
     if (redirection_type == (char*)NULL){
         return (char*)NULL;
     }
-
     // Make a copy of the input to prevent side effects
     char * input_copy = malloc(strlen(input) + 1); 
     strcpy(input_copy, input);
 
     char* token = strtok(input_copy, redirection_type);
-    strcat(redirection_type, DELIM);
     token = strtok(NULL, redirection_type);
 
     if (token == (char*)NULL) return (char*) NULL;
@@ -167,8 +163,8 @@ char* get_io_redirection_path(char* input){
     strcpy(result, token);
 
     free(input_copy);
-
-    return result;
+    result = replaceWord(result, "\t", "");
+    return replaceWord(result, " ", "");
 }
 
 void execute(char** args){
@@ -233,6 +229,26 @@ char **get_args(char* input){
 }
 
 
+/* FROM OLD MAIN
+ char input[256];
+    printf("> ");
+    scanf("%[^\n\r]", input);
+
+    char* command = get_command(input);
+    printf("Command: %s\n", command);
+
+    char* parameters = get_parameters(input);
+    printf("Parameters: %s\n", parameters);
+
+    char* redirection_type = get_io_redirection_type(input);
+    printf("Redirection type: %s\n", redirection_type);
+
+    char* redirection_path = get_io_redirection_path(input);
+    printf("Redirection path: %s\n", redirection_path);
+
+    execute_command(command, parameters);
+    return 0;
+*/
 int main(int argc, char **argv) {
     while (1){
         char **args;
@@ -259,16 +275,31 @@ int main(int argc, char **argv) {
          * Parse input to args
         **/
         args = get_args(buffer);
+        char *input = malloc(sizeof(char) * 64);
         printf("\n--args------\n");
         for (int i = 0; i < 10; i++){
             printf("%s", args[i]);
             printf(" ");
+            if (args[i] != NULL){
+                strcat(input, args[i]);
+                strcat(input, " ");
+            }
         }
         printf("\n------------\n");
+        printf("\n----input------\n");
+        printf("%s", input);
+        printf("\n------------\n");
+        char *direction = get_io_redirection_type(input);
+        printf("Direction:\t%s\n", direction);
+        char *io_path = malloc(1000*64);
 
+        io_path = get_io_redirection_path(input, direction);
+        printf("IO Path:\t%s\n", io_path);
+        // TODO: Handle direction of < or >
+        // TODO: split io_redirection to from_path and to_path
         // TODO: Handle I/O
         /**
-         * Execure args
+         * Execute args
         **/
         execute(args);
     }
