@@ -171,19 +171,7 @@ char* get_io_redirection_path(char* input){
     return result;
 }
 
-
-void execute_command(char* command, char* parameters){
-    // Commands exist in /bin/ folder
-    // concats the command onto the path for bin-folder
-    char path[50] = "/bin/";
-    strcat(path, command);
-
-    // TODO: Handle several inputs
-    // TODO: Parameters still contains space/tab
-    // TODO: Convert paramter |char*| to |char*, ..., char*| to pass it to execl
-    char param[64] = "";
-    strcpy(param, replaceWord(parameters, " ", ""));
-
+void execute(char** args){
     // Used to keep track of zombies, to kill off. 
     int child_status;
     // Kills all zombies.
@@ -215,21 +203,11 @@ void execute_command(char* command, char* parameters){
         // In child process
         
         // Run the command.
-        // Execl replaces the child (data and all) with the command to be executed.
-        // excl(3) needs a path to an executable (such as 'sl'),
-        // then path
-        // TODO: execl() needs to know number of parameters
-        int execl_status = -1;
-        if (strcmp(param, "")) {
-            execl_status = execl(path, command, param, NULL);
-        } else {
-            execl_status = execl(path, command, NULL);
-        }
+        // Execvp replaces the child (data and all) with the command to be executed.
+        int execl_status = execvp(args[0], args);
         if (execl_status == -1){
             printf("No success!\n");
         }
-
-        
     }
     else{
         // This will occur if fork() fails.(child_pid < 0) 
@@ -240,24 +218,56 @@ void execute_command(char* command, char* parameters){
 
 }
 
+char **get_args(char* input){
+    char **args = malloc(1000);
+    char *token;
+    int i = 0;
+    token = strtok(input, DELIM);
+    while(token != (char*)NULL){
+        args[i] = token;
+        i++;
+        token = strtok(NULL, DELIM);
+    }
+    args[i] = NULL;
+    return args;
+}
+
+
 int main(int argc, char **argv) {
+    char **args;
+    printf("$ ");
 
-    char input[256];
-    printf("> ");
-    scanf("%[^\n\r]", input);
+    /**
+     * Read input from user
+    **/
+    int c;
+    char *buffer = malloc(sizeof(char) * 1024);
+    int pos = 0;
 
-    char* command = get_command(input);
-    printf("Command: %s\n", command);
+    while (1){
+        c = getchar();  // Read from stdin
 
-    char* parameters = get_parameters(input);
-    printf("Parameters: %s\n", parameters);
+        if (c == '\n'){  // on enter
+            buffer[pos] = '\0';
+            break;
+        } else {
+            buffer[pos++] = c;
+        }
+    }
+    
+    /**
+     * Parse input to args
+    **/
+    args = get_args(buffer);
+    printf("\n--args------\n");
+    for (int i = 0; i < 10; i++){
+        printf("%s", args[i]);
+        printf(" ");
+    }
+    printf("\n------------\n");
 
-    char* redirection_type = get_io_redirection_type(input);
-    printf("Redirection type: %s\n", redirection_type);
+    // TODO: Handle I/O
 
-    char* redirection_path = get_io_redirection_path(input);
-    printf("Redirection path: %s\n", redirection_path);
-
-    execute_command(command, parameters);
+    execute(args);
     return 0;
 }
