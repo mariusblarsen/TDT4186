@@ -3,6 +3,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 // Delimiter
 #define DELIM " \t"
@@ -74,100 +77,53 @@ char* get_command(char* input){
 }
 
 // Get the parameters part of the given input
-char* get_parameters(char* input){
-    // Make a copy of the input to prevent side effects
-    char * input_copy = malloc(strlen(input) + 1); 
-    strcpy(input_copy, input);
-
-    // Create temporary result to store parameters
-    // Allocate the entire size of the input (including termination char)
-    // This is only a temporary result, since we don't need the entire allocated size, 
-    // but at this point we do not know how much size is needed. 
-    char temp_result[strlen(input_copy) + 1];
-    
-    // First token is the command part
-    char* current_token = strtok(input_copy, DELIM);
-
-    // Next token should be the first parameter
-    current_token = strtok(NULL, DELIM);
-
+char** get_parameters(char** input, int pos){
+    char** result = malloc(sizeof(char) * 64);
     int counter = 0;
-    int total_string_size = 0;
-    // Loop through all parameters, and add them to temp result
-    while(  current_token != NULL && 
-            strcmp(current_token, "<") != 0 && 
-            strcmp(current_token, ">") != 0)
+
+    while ( input[counter] != NULL && 
+            *input[counter] != '\0' && 
+            *input[counter] != '<' && 
+            *input[counter] != '>')
     {
-        // Add this token to the result
-        for (size_t i = 0; i < strlen(current_token); i++)
-        {
-            temp_result[counter++] = current_token[i];
-        }
-        // Append a space as a separator
-        temp_result[counter++] = ' ';
-
-        // Go to next token
-        current_token = strtok(NULL, DELIM);
-    } 
-
-    // Replace the last space with string termination char
-    temp_result[counter] = '\0';
-
-    // Our result now contains the string that we want, 
-    // but it has some unused space. Let's fix that. 
-    // Now that we know the size, we can allocate the result 
-    // array with the correct size, to avoid wasting memory. 
-    // char* final_result = malloc(counter);
-    char* final_result = malloc(counter);
-
-    // Copy over the characters that we need
-    for (size_t i = 0; i < counter + 1; i++)
-    {
-        final_result[i] = temp_result[i];
+        result[counter] = input[counter];
+        counter++;
     }
 
-    // We no longer need the copied input, remove it from memory
-    free(input_copy);
-    
-    return final_result;
+    return result;
 }
 
 // Get the IO redirection part of the given input. 
 // Will return "<", ">" or NULL. 
-char* get_io_redirection_type(char* input){
-    if (strchr(input, '<') != NULL){
-        return (char*)"<";
+char get_io_redirection_type_v2(char** input){
+
+    int counter = 0;
+    while ( input[counter] != NULL && 
+            *input[counter] != '\0')
+    {
+        if (*input[counter] == '>') return '>';
+        if (*input[counter] == '<') return '<';
+        counter++;
     }
-    if (strchr(input, '>') != NULL){
-        return (char*)">";
-    }
-    return (char*)NULL;
+    return '\0';
 }
 
 // Get the IO Redirection path of the given input. 
 // This is the path where the redirection should point. 
-char *get_io_redirection_path(char* input, char* redirection_type){
-    if (redirection_type == (char*)NULL){
-        return (char*)NULL;
+char *get_io_redirection_path_v2(char** input){
+    int counter = 0;
+    while ( input[counter] != NULL && 
+            *input[counter] != '\0')
+    {
+        if (*input[counter] == '>') return input[++counter];
+        if (*input[counter] == '<') return input[++counter];
+        counter++;
     }
-    // Make a copy of the input to prevent side effects
-    char * input_copy = malloc(strlen(input) + 1); 
-    strcpy(input_copy, input);
+    return '\0';
 
-    char* token = strtok(input_copy, redirection_type);
-    token = strtok(NULL, redirection_type);
-
-    if (token == (char*)NULL) return (char*) NULL;
-
-    char* result = malloc(strlen(token) + 1);
-    strcpy(result, token);
-
-    free(input_copy);
-    result = replaceWord(result, "\t", "");
-    return replaceWord(result, " ", "");
 }
 
-void execute(char** args){
+void execute(char** args, int pos){
     // Used to keep track of zombies, to kill off. 
     int child_status;
     // Kills all zombies.
@@ -183,9 +139,12 @@ void execute(char** args){
 
     // Fork process
     int child_pid = fork();
+    int fd = 0; // File descriptor
+
     if (child_pid > 0){
         // In parent process, start loop again
         child_pid = wait(&child_status);
+        close(fd); // Closing any potential file descriptors
         printf("End of process %d: ", child_pid);
         if (WIFEXITED(child_status)) {
                 printf("The process ended with exit(%d).\n", WEXITSTATUS(child_status));
@@ -200,8 +159,41 @@ void execute(char** args){
         
         // Run the command.
         // Execvp replaces the child (data and all) with the command to be executed.
-        int execl_status = execvp(args[0], args);
-        if (execl_status == -1){
+        
+       
+        const char* filename = get_io_redirection_path_v2(args);
+        if (get_io_redirection_type_v2(args) == '>'){
+            // Instead of printing, writes to file.
+            fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); //eqv with creat(filename)
+            if(fd != -1){
+                dup2(fd, STDOUT_FILENO); 
+                dup2(fd, STDERR_FILENO);
+                //TODO: Check the return values of dup2 here
+                close(fd);
+            }else{
+                printf("Unable to open file: %s\n", filename);
+                return;
+            }
+            
+
+        }
+        else if (get_io_redirection_type_v2(args) == '<'){
+            
+            fd = open(filename, O_RDONLY, 0666);
+            printf("FD: %d\n", fd);
+            if(fd != -1){
+                dup2(fd, STDIN_FILENO); 
+                dup2(fd, STDERR_FILENO);
+                //TODO: Check the return values of dup2 here
+                close(fd);
+            }else{
+                printf("Unable to open file: %s\n", filename);
+                return;
+            }
+        }
+
+        int execvp_status = execvp(args[0], get_parameters(args, pos));
+        if (execvp_status == -1){
             printf("No success!\n");
         }
     }
@@ -214,8 +206,8 @@ void execute(char** args){
 
 }
 
-char **get_args(char* input){
-    char **args = malloc(1000);
+char **get_args(char* input, int pos){
+    char **args = malloc(sizeof(char) * 1024);
     char *token;
     int i = 0;
     token = strtok(input, DELIM);
@@ -229,71 +221,59 @@ char **get_args(char* input){
 }
 
 
-/* FROM OLD MAIN
- char input[256];
-    printf("> ");
-    scanf("%[^\n\r]", input);
-
-    char* command = get_command(input);
-    printf("Command: %s\n", command);
-
-    char* parameters = get_parameters(input);
-    printf("Parameters: %s\n", parameters);
-
-    char* redirection_type = get_io_redirection_type(input);
-    printf("Redirection type: %s\n", redirection_type);
-
-    char* redirection_path = get_io_redirection_path(input);
-    printf("Redirection path: %s\n", redirection_path);
-
-    execute_command(command, parameters);
-    return 0;
-*/
 int main(int argc, char **argv) {
+    
     while (1){
-        char **args;
+        
         printf("$ ");
-        int c;
         char *buffer = malloc(sizeof(char) * 1024);
+        /*
+            Read input from user
+        */
+        printf("TAKING THE INPUT:\n");
+        
+        int c;
         int pos = 0;
-
-        /**
-         * Read input from user
-        **/
         while (1){
+            printf("1\n");
             c = getchar();  // Read from stdin
+            printf("C: %c\n", c);
 
-            if (c == '\n'){  // on enter
+            if (c == '\n'){  // on enter || c == EOF
+                printf("3\n");
                 buffer[pos] = '\0';
+                printf("4\n");
                 break;
             } else {
+                printf("5\n");
                 buffer[pos++] = c;
+                printf("6\n");
             }
         }
         
         /**
          * Parse input to args
         **/
-        args = get_args(buffer);
-        char *input = malloc(sizeof(char) * 64);
+        printf("GETTING THE ARGS FROM INPUT\n");
+        char **args = get_args(buffer, pos);
         printf("\n--args------\n");
-        for (int i = 0; i < 10; i++){
-            printf("%s", args[i]);
-            printf(" ");
-            if (args[i] != NULL){
-                strcat(input, args[i]);
-                strcat(input, " ");
-            }
+        int i = 0;
+        while (args[i] != NULL){
+            printf("%s ", args[i++]);
+        }
+  
+        printf("\n------------\n");
+        printf("\n----params------\n");
+        char **params = get_parameters(args, pos);
+        while (params[i] != NULL){
+            printf("%s ", params[i++]);
         }
         printf("\n------------\n");
-        printf("\n----input------\n");
-        printf("%s", input);
-        printf("\n------------\n");
-        char *direction = get_io_redirection_type(input);
-        printf("Direction:\t%s\n", direction);
+        char direction = get_io_redirection_type_v2(args);
+        printf("Direction:\t%c\n", direction);
         char *io_path = malloc(1000*64);
 
-        io_path = get_io_redirection_path(input, direction);
+        io_path = get_io_redirection_path_v2(args);
         printf("IO Path:\t%s\n", io_path);
         // TODO: Handle direction of < or >
         // TODO: split io_redirection to from_path and to_path
@@ -301,7 +281,15 @@ int main(int argc, char **argv) {
         /**
          * Execute args
         **/
-        execute(args);
+        execute(args, pos);
+
+        // Free all allocated data
+        free(args);
+        free(params);
+
+
     }
+
+    // free(buffer);
     return 0;
 }
