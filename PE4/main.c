@@ -140,6 +140,8 @@ void execute(char** args, int pos){
     // Fork process
     int child_pid = fork();
     int fd = 0; // File descriptor
+    int saved_stdout = dup(STDOUT_FILENO); // Save to restore normal stdin/out later
+    int saved_stdin = dup(STDIN_FILENO);
 
     if (child_pid > 0){
         // In parent process, start loop again
@@ -152,6 +154,11 @@ void execute(char** args, int pos){
         if (WIFSIGNALED(child_status)) {
                 printf("The process ended with kill -%d.\n", WTERMSIG(child_status));
         }
+        // TODO reset back to normal stdin/stdout
+        dup2(saved_stdout, STDOUT_FILENO);
+        dup2(saved_stdin, STDIN_FILENO);
+        close(saved_stdout);
+        close(saved_stdin);
 
     }
     else if (child_pid == 0){
@@ -166,6 +173,7 @@ void execute(char** args, int pos){
             // Instead of printing, writes to file.
             fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); //eqv with creat(filename)
             if(fd != -1){
+                saved_stdout = dup(STDOUT_FILENO); // Save to return later
                 dup2(fd, STDOUT_FILENO); 
                 dup2(fd, STDERR_FILENO);
                 //TODO: Check the return values of dup2 here
@@ -182,6 +190,7 @@ void execute(char** args, int pos){
             fd = open(filename, O_RDONLY, 0666);
             printf("FD: %d\n", fd);
             if(fd != -1){
+                saved_stdin = dup(STDIN_FILENO); // Save to return later
                 dup2(fd, STDIN_FILENO); 
                 dup2(fd, STDERR_FILENO);
                 //TODO: Check the return values of dup2 here
@@ -239,7 +248,7 @@ int main(int argc, char **argv) {
             c = getchar();  // Read from stdin
             printf("C: %c\n", c);
 
-            if (c == '\n'){  // on enter || c == EOF
+            if (c == '\n' || c == EOF){  // on enter || c == EOF
                 printf("3\n");
                 buffer[pos] = '\0';
                 printf("4\n");
@@ -286,10 +295,10 @@ int main(int argc, char **argv) {
         // Free all allocated data
         free(args);
         free(params);
-
+        free(buffer);
 
     }
 
-    // free(buffer);
+    
     return 0;
 }
