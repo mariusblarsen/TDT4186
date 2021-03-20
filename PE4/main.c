@@ -10,126 +10,182 @@
 // Delimiter
 #define DELIM " \t"
 
+// Parse input string into list of arguments
+char **parse_input_to_arguments(char* input){
+    // Define a buffer of a fixed length, because we don't 
+    // know how many arguments we are going to have. 
+    char **buffer = malloc(sizeof(char) * 1024);
 
-char* replaceWord(const char* s, const char* oldW, 
-                  const char* newW) 
-{  
-    // Author: Henrik Fjellheim
-    char* result; 
-    int i, cnt = 0; 
-    int newWlen = strlen(newW); 
-    int oldWlen = strlen(oldW); 
-  
-    // Counting the number of times old word 
-    // occur in the string 
-    for (i = 0; s[i] != '\0'; i++) { 
-        if (strstr(&s[i], oldW) == &s[i]) { 
-            cnt++; 
-  
-            // Jumping to index after the old word. 
-            i += oldWlen - 1; 
-        } 
-    } 
-  
-    // Making new string of enough length 
-    result = (char*)malloc(i + cnt * (newWlen - oldWlen) + 1); 
-  
-    i = 0; 
-    while (*s) { 
-        // compare the substring with the result 
-        if (strstr(s, oldW) == s) { 
-            strcpy(&result[i], newW); 
-            i += newWlen; 
-            s += oldWlen; 
-        } 
-        else
-            result[i++] = *s++; 
-    } 
-  
-    result[i] = '\0'; 
-    return result; 
-} 
-
-char* scan_input(){
-    char input[256];
-    printf("> ");
-    scanf("%[^\n\r]", input);
-
-    return strtok(input, DELIM);
-}
-
-// Get the command part of given input
-char* get_command(char* input){
-    // Make a copy of the input to prevent side effects
-    char * input_copy = malloc(strlen(input) + 1); 
-    strcpy(input_copy, input);
-
-    char* command_part = strtok(input_copy, DELIM);
-    
-    // Command part now has allocated entire length of input in memory. 
-    // But we only need the length of the actual command
-    char* command = malloc(strlen(command_part) + 1);
-    strcpy(command, command_part);
-
-    free(input_copy);
-
-    return command;
-}
-
-// Get the parameters part of the given input
-char** get_parameters(char** input, int pos){
-    char** result = malloc(sizeof(char) * 64);
-    int counter = 0;
-
-    while ( input[counter] != NULL && 
-            *input[counter] != '\0' && 
-            *input[counter] != '<' && 
-            *input[counter] != '>')
-    {
-        result[counter] = input[counter];
-        counter++;
+    // Split the input using strtok, and put the results into the buffer
+    char* token = strtok(input, DELIM);
+    int argument_count = 0;
+    while(token != (char*)NULL){
+        buffer[argument_count++] = token;
+        token = strtok(NULL, DELIM);
     }
 
+    // We now know the number of arguments, and can allocate precicely enough space
+    char** arguments = malloc(sizeof(char*) * (argument_count + 1));
+
+    // Copy over elements from buffer to arguments variable
+    for (int i = 0; i < argument_count; i++)
+    {
+        arguments[i] = malloc(sizeof(char) * (strlen(buffer[i]) + 1));   // Allocate memory 
+        strcpy(arguments[i], buffer[i]);    // Copy value from buffer
+    }
+
+    // Append one null char pointer to arguments that signal end of the array
+    buffer[argument_count] = (char*)0;
+    
+    // Free the buffer
+    free(buffer);
+
+    return arguments;
+}
+
+// Scan input from terminal, and return pointer to a string (char array) containing entire input.
+char* scan_input(){
+    char *buffer = malloc(sizeof(char) * 1024);
+
+    int current_char;   //TODO: Explain why this is int and not char? 
+    int input_char_length = 0;
+    while (1){
+        current_char = getchar();  // Read from stdin
+        if (current_char == '\n' || current_char == EOF){  // on enter
+            buffer[input_char_length] = '\0';
+            break;
+        } else {
+            buffer[input_char_length++] = current_char;
+        }
+    }
+    
+    // Now we know exactly how much space our input needs, and can allocate precicely that amount
+    char* input = malloc(sizeof(char) * (input_char_length + 1));   // Plus one due to terminating '\0'
+
+    // Copy the string from the buffer into input variable
+    strcpy(input, buffer);
+
+    // We no longer need the buffer, so we can free it from memory
+    free(buffer);
+
+    return input;
+}
+
+// Get index of redirection symbol (< or >) in argument array. 
+// Returns -1 if arguments does not contain redirect symbol. 
+int get_redirection_index(char** arguments){
+    int counter = 0;
+    while (arguments[counter] != NULL) {
+        char argument = *arguments[counter];
+        if (argument == '\0') break;    // Reached end of arguments
+        if (argument == '>' || argument == '<') return counter; // Found redirection, return index
+        
+        counter++;
+    }
+    return -1;
+}
+
+// Get the command and parameters from arguments array. 
+// This will discard everything before potential redirection symbols. 
+// If redirection is present, a new array is returned, so arguments parameter is not changed. 
+char** get_command_with_parameters(char** arguments){
+    int redirection_index = get_redirection_index(arguments);
+    if (redirection_index <= 0){
+        return arguments;
+    }
+    
+    char** result = malloc(sizeof(char*) * (redirection_index + 1));    // +1 becuase terminating array with NULL 
+
+    for (int i = 0; i < redirection_index; i++)
+    {
+        result[i] = malloc(sizeof(char) * (strlen(arguments[i]) + 1));
+        strcpy(result[i], arguments[i]);
+    }
+    result[redirection_index] = (char*)0;
+    
     return result;
 }
 
-// Get the IO redirection part of the given input. 
-// Will return "<", ">" or NULL. 
-char get_io_redirection_type_v2(char** input){
-
-    int counter = 0;
-    while ( input[counter] != NULL && 
-            *input[counter] != '\0')
-    {
-        if (*input[counter] == '>') return '>';
-        if (*input[counter] == '<') return '<';
-        counter++;
+void execute_normal(char** arguments){
+    int execute_status = execvp(arguments[0], get_command_with_parameters(arguments));
+    if (execute_status < 0){
+        printf("ERROR: execute_normal failed.\n");
     }
-    return '\0';
 }
 
-// Get the IO Redirection path of the given input. 
-// This is the path where the redirection should point. 
-char *get_io_redirection_path_v2(char** input){
-    int counter = 0;
-    while ( input[counter] != NULL && 
-            *input[counter] != '\0')
-    {
-        if (*input[counter] == '>') return input[++counter];
-        if (*input[counter] == '<') return input[++counter];
-        counter++;
+// Instead of printing, writes to file.
+void execute_with_output_redirection(char** arguments, int redirection_index){
+
+    // Save to restore normal stdin/out later
+    int original_stdout = dup(STDOUT_FILENO); 
+    int original_stdin = dup(STDIN_FILENO);
+
+    const char* filename = arguments[redirection_index+1];
+    int file_descriptor = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); //eqv with creat(filename)
+    if(file_descriptor != -1){
+        // saved_stdout = dup(STDOUT_FILENO); // Save to return later
+        dup2(file_descriptor, STDOUT_FILENO); 
+        dup2(file_descriptor, STDERR_FILENO);
+        //TODO: Check the return values of dup2 here
+        close(file_descriptor);
+    }else{
+        printf("Unable to open file: %s\n", filename);
+        return;
     }
-    return '\0';
+    int execute_status = execvp(arguments[0], get_command_with_parameters(arguments));
+    if (execute_status < 0){
+        printf("No success!\n");
+    }
+    
+    // Return io to original
+    dup2(original_stdout, STDOUT_FILENO);
+    dup2(original_stdin, STDIN_FILENO);
+
+    // Make sure to close io
+    close(original_stdout);
+    close(original_stdin);
 
 }
 
-void execute(char** args, int pos){
+void execute_with_input_redirection(char** arguments, int redirection_index){
+
+    // Save to restore normal stdin/out later
+    int original_stdout = dup(STDOUT_FILENO); 
+    int original_stdin = dup(STDIN_FILENO);
+
+    const char* filename = arguments[redirection_index+1];
+    int file_descriptor = open(filename, O_RDONLY, 0666);
+    if(file_descriptor != -1){
+        // saved_stdin = dup(STDIN_FILENO); // Save to return later
+        dup2(file_descriptor, STDIN_FILENO); 
+        dup2(file_descriptor, STDERR_FILENO);
+        //TODO: Check the return values of dup2 here
+        close(file_descriptor);
+    }else{
+        printf("Unable to open file: %s\n", filename);
+        return;
+    }
+    int execute_status = execvp(arguments[0], get_command_with_parameters(arguments));
+    if (execute_status < 0){
+        printf("No success!\n");
+    }
+
+    // Return io to original
+    dup2(original_stdout, STDOUT_FILENO);
+    dup2(original_stdin, STDIN_FILENO);
+
+    // Make sure to close io
+    close(original_stdout);
+    close(original_stdin);
+}
+
+// Execute a command given as an array of arguments
+void execute(char** arguments){
     // Used to keep track of zombies, to kill off. 
     int child_status;
     // Kills all zombies.
     do{
         child_status = waitpid(-1, NULL, WNOHANG);
-        
         if (child_status > 0){
             // Print deceased zombie PID
             printf("Dead zombie: %d \n", child_status);
@@ -139,166 +195,82 @@ void execute(char** args, int pos){
 
     // Fork process
     int child_pid = fork();
-    int fd = 0; // File descriptor
-    int saved_stdout = dup(STDOUT_FILENO); // Save to restore normal stdin/out later
-    int saved_stdin = dup(STDIN_FILENO);
 
-    if (child_pid > 0){
-        // In parent process, start loop again
-        child_pid = wait(&child_status);
-        close(fd); // Closing any potential file descriptors
-        printf("End of process %d: ", child_pid);
-        if (WIFEXITED(child_status)) {
-                printf("The process ended with exit(%d).\n", WEXITSTATUS(child_status));
-        }
-        if (WIFSIGNALED(child_status)) {
-                printf("The process ended with kill -%d.\n", WTERMSIG(child_status));
-        }
-        // TODO reset back to normal stdin/stdout
-        dup2(saved_stdout, STDOUT_FILENO);
-        dup2(saved_stdin, STDIN_FILENO);
-        close(saved_stdout);
-        close(saved_stdin);
-
+    if (child_pid < 0){
+        // This will occur if fork() fails.(child_pid < 0) 
+        perror("ERROR: Fork failed. \n");
+        // Kill the faulty process, with exit signal EXIT_FAILURE
+        exit(EXIT_FAILURE);
+        return;
     }
-    else if (child_pid == 0){
+
+    if (child_pid == 0){
         // In child process
-        
-        // Run the command.
-        // Execvp replaces the child (data and all) with the command to be executed.
-        
-       
-        const char* filename = get_io_redirection_path_v2(args);
-        if (get_io_redirection_type_v2(args) == '>'){
-            // Instead of printing, writes to file.
-            fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); //eqv with creat(filename)
-            if(fd != -1){
-                saved_stdout = dup(STDOUT_FILENO); // Save to return later
-                dup2(fd, STDOUT_FILENO); 
-                dup2(fd, STDERR_FILENO);
-                //TODO: Check the return values of dup2 here
-                close(fd);
-            }else{
-                printf("Unable to open file: %s\n", filename);
-                return;
-            }
-            
-
+        int redirection_index = get_redirection_index(arguments);
+        if (redirection_index <= 0){
+            execute_normal(arguments);
         }
-        else if (get_io_redirection_type_v2(args) == '<'){
-            
-            fd = open(filename, O_RDONLY, 0666);
-            printf("FD: %d\n", fd);
-            if(fd != -1){
-                saved_stdin = dup(STDIN_FILENO); // Save to return later
-                dup2(fd, STDIN_FILENO); 
-                dup2(fd, STDERR_FILENO);
-                //TODO: Check the return values of dup2 here
-                close(fd);
-            }else{
-                printf("Unable to open file: %s\n", filename);
-                return;
-            }
+        else if (*arguments[redirection_index] == '>'){
+            execute_with_output_redirection(arguments, redirection_index);
         }
-
-        int execvp_status = execvp(args[0], get_parameters(args, pos));
-        if (execvp_status == -1){
-            printf("No success!\n");
+        else if (*arguments[redirection_index] == '<'){
+            execute_with_input_redirection(arguments, redirection_index);
+        }
+        else{
+            printf("ERROR: Redirection index returned unexpected result.\n");
         }
     }
     else{
-        // This will occur if fork() fails.(child_pid < 0) 
-        perror("Error\n");
-        // Kill the faulty process, with exit signal EXIT_FAILURE
-        exit(EXIT_FAILURE);
+        // In parent process, start loop again
+        child_pid = wait(&child_status);
+        printf("End of process %d: ", child_pid);
+        if (WIFEXITED(child_status)) {
+            printf("The process ended with exit(%d).\n", WEXITSTATUS(child_status));
+        }
+        if (WIFSIGNALED(child_status)) {
+            printf("The process ended with kill -%d.\n", WTERMSIG(child_status));
+        }
     }
-
+    
 }
 
-char **get_args(char* input, int pos){
-    char **args = malloc(sizeof(char) * 1024);
-    char *token;
+// Print the whole array of arguments, where each argument is separated by a comma 
+// Also prints the sub-array where any redirection part is removed
+void print_arguments(char** arguments){
+    printf("Arguments: [");    
     int i = 0;
-    token = strtok(input, DELIM);
-    while(token != (char*)NULL){
-        args[i] = token;
-        i++;
-        token = strtok(NULL, DELIM);
+    while (arguments[i] != NULL){
+        printf("%s", arguments[i++]);
+        if (arguments[i] != NULL) printf(", ");
     }
-    args[i] = NULL;
-    return args;
-}
+    printf("]\n");
 
+    char** arguments_with_parameters = get_command_with_parameters(arguments);
+    printf("Command with arguments: [");
+    i = 0;
+    while (arguments_with_parameters[i] != NULL){
+        printf("%s", arguments_with_parameters[i++]);
+        if (arguments_with_parameters[i] != NULL) printf(", ");
+    }
+    printf("]\n");
+
+    printf("Redirection index: %d\n", get_redirection_index(arguments));
+}
 
 int main(int argc, char **argv) {
-    
     while (1){
-        
         printf("$ ");
-        char *buffer = malloc(sizeof(char) * 1024);
-        /*
-            Read input from user
-        */
-        printf("TAKING THE INPUT:\n");
+        char* input = scan_input();
+        char** arguments = parse_input_to_arguments(input);
+
+        print_arguments(arguments);
         
-        int c;
-        int pos = 0;
-        while (1){
-            printf("1\n");
-            c = getchar();  // Read from stdin
-            printf("C: %c\n", c);
-
-            if (c == '\n' || c == EOF){  // on enter || c == EOF
-                printf("3\n");
-                buffer[pos] = '\0';
-                printf("4\n");
-                break;
-            } else {
-                printf("5\n");
-                buffer[pos++] = c;
-                printf("6\n");
-            }
-        }
+        // Execute command 
+        execute(arguments);
         
-        /**
-         * Parse input to args
-        **/
-        printf("GETTING THE ARGS FROM INPUT\n");
-        char **args = get_args(buffer, pos);
-        printf("\n--args------\n");
-        int i = 0;
-        while (args[i] != NULL){
-            printf("%s ", args[i++]);
-        }
-  
-        printf("\n------------\n");
-        printf("\n----params------\n");
-        char **params = get_parameters(args, pos);
-        while (params[i] != NULL){
-            printf("%s ", params[i++]);
-        }
-        printf("\n------------\n");
-        char direction = get_io_redirection_type_v2(args);
-        printf("Direction:\t%c\n", direction);
-        char *io_path = malloc(1000*64);
-
-        io_path = get_io_redirection_path_v2(args);
-        printf("IO Path:\t%s\n", io_path);
-        // TODO: Handle direction of < or >
-        // TODO: split io_redirection to from_path and to_path
-        // TODO: Handle I/O
-        /**
-         * Execute args
-        **/
-        execute(args, pos);
-
-        // Free all allocated data
-        free(args);
-        free(params);
-        free(buffer);
-
+        // Free memory allocated to arguments
+        free(arguments);
     }
-
     
     return 0;
 }
