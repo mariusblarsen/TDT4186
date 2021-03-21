@@ -6,9 +6,24 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <limits.h>
+
+char **parse_input_to_arguments(char* input);
+char* scan_input();
+int get_redirection_index(char** arguments);
+char** get_command_with_parameters(char** arguments);
+void execute_command(char** arguments);
+void execute_with_output_redirection(char** arguments, int redirection_index);
+void execute_with_input_redirection(char** arguments, int redirection_index);
+int run_internal_command(char ** arguments);
+void read_and_execute_script(char * filename);
+void execute(char** arguments);
+void print_arguments(char** arguments);
+void print_pretty();
+void welcome();
 
 // Delimiter
-#define DELIM " \t"
+#define DELIM " \t\n"
 
 // Parse input string into list of arguments
 char **parse_input_to_arguments(char* input){
@@ -47,7 +62,7 @@ char **parse_input_to_arguments(char* input){
 char* scan_input(){
     char *buffer = malloc(sizeof(char) * 1024);
 
-    int current_char;   //TODO: Explain why this is int and not char? 
+    int current_char;  
     int input_char_length = 0;
     while (1){
         current_char = getchar();  // Read from stdin
@@ -105,82 +120,129 @@ char** get_command_with_parameters(char** arguments){
     
     return result;
 }
-
-void execute_normal(char** arguments){
+void execute_command(char** arguments){
     int execute_status = execvp(arguments[0], get_command_with_parameters(arguments));
-    if (execute_status < 0){
-        printf("ERROR: execute_normal failed.\n");
+    if (execute_status < 0){ 
+        // print error
+        perror("Execute failed \n");
+        // Kill the faulty process, with exit signal EXIT_FAILURE
+        exit(EXIT_FAILURE);
     }
 }
-
 // Instead of printing, writes to file.
 void execute_with_output_redirection(char** arguments, int redirection_index){
 
     // Save to restore normal stdin/out later
     int original_stdout = dup(STDOUT_FILENO); 
-    int original_stdin = dup(STDIN_FILENO);
 
     const char* filename = arguments[redirection_index+1];
     int file_descriptor = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); //eqv with creat(filename)
     if(file_descriptor != -1){
-        // saved_stdout = dup(STDOUT_FILENO); // Save to return later
         dup2(file_descriptor, STDOUT_FILENO); 
         dup2(file_descriptor, STDERR_FILENO);
-        //TODO: Check the return values of dup2 here
         close(file_descriptor);
     }else{
         printf("Unable to open file: %s\n", filename);
         return;
     }
-    int execute_status = execvp(arguments[0], get_command_with_parameters(arguments));
-    if (execute_status < 0){
-        printf("No success!\n");
-    }
+    execute_command(arguments);
     
     // Return io to original
     dup2(original_stdout, STDOUT_FILENO);
-    dup2(original_stdin, STDIN_FILENO);
 
     // Make sure to close io
     close(original_stdout);
-    close(original_stdin);
 
 }
-
+// Takes input from file
 void execute_with_input_redirection(char** arguments, int redirection_index){
 
     // Save to restore normal stdin/out later
-    int original_stdout = dup(STDOUT_FILENO); 
     int original_stdin = dup(STDIN_FILENO);
 
     const char* filename = arguments[redirection_index+1];
     int file_descriptor = open(filename, O_RDONLY, 0666);
     if(file_descriptor != -1){
-        // saved_stdin = dup(STDIN_FILENO); // Save to return later
+        // Redirect
         dup2(file_descriptor, STDIN_FILENO); 
         dup2(file_descriptor, STDERR_FILENO);
-        //TODO: Check the return values of dup2 here
         close(file_descriptor);
     }else{
         printf("Unable to open file: %s\n", filename);
         return;
     }
-    int execute_status = execvp(arguments[0], get_command_with_parameters(arguments));
-    if (execute_status < 0){
-        printf("No success!\n");
-    }
+    execute_command(arguments);
 
     // Return io to original
-    dup2(original_stdout, STDOUT_FILENO);
     dup2(original_stdin, STDIN_FILENO);
 
     // Make sure to close io
-    close(original_stdout);
     close(original_stdin);
+}
+
+int run_internal_command(char ** arguments){
+    char * command = arguments[0];
+    if (strcmp(command, "exit") == 0){
+        exit(0);
+        return 1;
+    }
+    else if ((strcmp(command, "cd") == 0)){
+        char * redirection = arguments[1];
+        chdir(redirection);
+        return 1;
+    }
+    else if ((strcmp(command, "clear") == 0)){
+        printf("\e[1;1H\e[2J");
+        return 1;
+    }
+    else if ((strcmp(command, "help") == 0)){
+        printf("exit\t-\texits WISH\n");
+        printf("clear\t-\tclear console\n");
+        printf("cd\t-\tchange directories\n");
+        printf("wish\t-\trun scripts\n");
+        return 1;
+    }
+    return 0;
+}
+
+// read and execute a script
+void read_and_execute_script(char * filename){
+    FILE * fp;
+    char * line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    fp = fopen(filename, "r");
+    if (fp == NULL){
+        printf("Unable to open file: %s\n", filename);
+        return;
+    }
+    
+    while ((read = getline(&line, &len, fp)) != -1) {
+        if (line[0] == '#'){continue;} // Handle comments
+        char** arguments = parse_input_to_arguments(line);
+        execute(arguments);
+        free(arguments);
+    }
+
+    fclose(fp);
+    if (line){
+        free(line);
+    }
 }
 
 // Execute a command given as an array of arguments
 void execute(char** arguments){
+    
+    // Check if the command is cd or exit, runs it.
+    // SHOTGUN before external commands.
+    // Not done in child process, as we want to be able to 
+    // "exit" the parent directly.
+    if (run_internal_command(arguments)){
+        // We have run an internal command, no need to continue
+        return;
+    }
+    
     // Used to keep track of zombies, to kill off. 
     int child_status;
     // Kills all zombies.
@@ -188,7 +250,7 @@ void execute(char** arguments){
         child_status = waitpid(-1, NULL, WNOHANG);
         if (child_status > 0){
             // Print deceased zombie PID
-            printf("Dead zombie: %d \n", child_status);
+            //printf("Dead zombie: %d \n", child_status);
         }
             
     } while(child_status > 0);
@@ -206,9 +268,10 @@ void execute(char** arguments){
 
     if (child_pid == 0){
         // In child process
+        
         int redirection_index = get_redirection_index(arguments);
         if (redirection_index <= 0){
-            execute_normal(arguments);
+            execute_command(arguments);
         }
         else if (*arguments[redirection_index] == '>'){
             execute_with_output_redirection(arguments, redirection_index);
@@ -223,17 +286,20 @@ void execute(char** arguments){
     else{
         // In parent process, start loop again
         child_pid = wait(&child_status);
+        /*
         printf("End of process %d: ", child_pid);
         if (WIFEXITED(child_status)) {
+            // Exit status print
             printf("The process ended with exit(%d).\n", WEXITSTATUS(child_status));
         }
         if (WIFSIGNALED(child_status)) {
+            // 
             printf("The process ended with kill -%d.\n", WTERMSIG(child_status));
         }
+        */
     }
     
 }
-
 // Print the whole array of arguments, where each argument is separated by a comma 
 // Also prints the sub-array where any redirection part is removed
 void print_arguments(char** arguments){
@@ -253,23 +319,73 @@ void print_arguments(char** arguments){
         if (arguments_with_parameters[i] != NULL) printf(", ");
     }
     printf("]\n");
-
     printf("Redirection index: %d\n", get_redirection_index(arguments));
 }
 
+void print_pretty(){
+    // Find and print current working directory
+    printf("\033[0;34m"); //Set the text to the color blue.
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("%s ", cwd);
+    } else {
+        perror("getcwd() error");
+        return;
+    }  
+    printf("\033[0;32m"); //Set the text to the color green.
+    printf("$ ");
+    printf("\033[0m"); // RESET COLOUR TO DEFAULT
+}
+
+
+void welcome(){
+    //printf("\e[1;1H\e[2J"); // Clears console on initialisation
+    printf("\033[0;35m"); //Set the text to the color purple.
+    printf("Welcome to Woefully Inadequate Shell!\n");
+    printf(" __          _______  _____ _    _ \n");
+    printf(" \\ \\        / /_   _|/ ____| |  | |\n");
+    printf("  \\ \\  /\\  / /  | | | (___ | |__| |\n");
+    printf("   \\ \\/  \\/ /   | |  \\___ \\|  __  |\n");
+    printf("    \\  /\\  /   _| |_ ____) | |  | |\n");
+    printf("     \\/  \\/   |_____|_____/|_|  |_|\n");
+    printf("run 'help' to see list of builtins.\n");
+    printf("\033[0m"); // RESET COLOUR TO DEFAULT
+    return;
+}                                   
+
 int main(int argc, char **argv) {
+
+    welcome(); // print welcome 
     while (1){
-        printf("$ ");
+        // Print working directory and $, in different colors!!
+        print_pretty();
         char* input = scan_input();
         char** arguments = parse_input_to_arguments(input);
-
-        print_arguments(arguments);
         
-        // Execute command 
-        execute(arguments);
+        //print_arguments(arguments);
+        
+        /*
+        Task D:
+        - Exec loads an executable file and replaces the current program image with it.
+        cd, exit, etc are not an executable file, but rather a shell builtin.
+        So the executable we want to run is the shell itself. 
+        - Instead, we can implement cd using another function: int chdir(const char *path); (found in unistd.h.), 
+        to change the directory in the current process. chdir(2) changes the workind directory of the
+        calling process to teh directeroy passed to the function.
+        - When exit() is called, we can simply use the exit() on the parent process to terminate the program.
+        */
+        
+        
+        // Checks if it is a script we want to execute
+        if (strcmp(arguments[0], "wish") == 0){
+            read_and_execute_script(arguments[1]);
+        }else {
+            execute(arguments);
+        }
         
         // Free memory allocated to arguments
         free(arguments);
+        free(input);
     }
     
     return 0;
