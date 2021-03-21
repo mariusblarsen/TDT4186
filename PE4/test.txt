@@ -1,4 +1,0 @@
-ls 
-ls -l 
-ls -l /dev > test2.txt 
-wc < test2.txt 
