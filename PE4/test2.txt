@@ -1,0 +1,11 @@
+total 128
+-rwxr-xr-x 1 hans hans 16792 Mar 19 09:03 hello_world
+-rw-r--r-- 1 hans hans   202 Mar 12 12:23 hello_world.c
+-rwxr-xr-x 1 hans hans 22368 Mar 21 11:48 main
+-rw-r--r-- 1 hans hans 12458 Mar 21 11:48 main.c
+-rw-r--r-- 1 hans hans    61 Mar 12 12:23 mymalloc
+-rw-r--r-- 1 hans hans   129 Mar 12 12:23 print_hello_world.c
+-rw-r--r-- 1 hans hans   101 Mar 21 11:35 test.sh
+-rw-r--r-- 1 hans hans    50 Mar 21 11:09 test.txt
+-rw-r--r-- 1 hans hans     0 Mar 21 11:49 test2.txt
+-rw-r--r-- 1 hans hans 11434 Mar 21 11:42 test3.txt
