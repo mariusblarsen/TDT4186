@@ -50,17 +50,17 @@ int main(int argc, char *argv[]){
     ////////////////////////////////
     /* Results of B block size testing */
     // Size (bytes)     ~   Bandwidth (unnamed)
-    // 1                ~   4.000.000
-    // 10               ~   25.000.000
-    // 100              ~   160.000.000
-    // 1.000            ~   215.000.000
-    // 10.000           ~   250.000.000
-    // 100.000          ~   280.000.000   ! Maximum bandwidth achieved on our system.
-    // 1.000.000        ~   234.000.000
-    // 10.000.000       ~   240.000.000
-    // 100.000.000      ~   200.000.000   ! Largest block size supported by the system, somewhere in the range [100.000.000, 1.000.000.000]
-    // 1.000.000.000    ~   0             ! One package is too big to be sent in 1 sec, still transfers data, just not every second.
-    // 10.000.000.000   ~   0             
+    // 1                ~       5 501 508
+    // 10               ~      42 080 730
+    // 100              ~     305 882 100
+    // 1.000            ~   2 013 728 000
+    // 10.000           ~   4 984 030 000       ! Maximum bandwidth achieved on our system.
+    // 100.000          ~   1 415 900 000       
+    // 1.000.000        ~   1 008 000 000     
+    // 10.000.000       ~     980 000 000 
+    // 100.000.000      ~     900 000 000   ! Largest block size supported by the system, somewhere in the range [100.000.000, 1.000.000.000]
+    // 1.000.000.000    ~               0   ! One package is too big to be sent in 1 sec, still transfers data, just not every second.
+    // 10.000.000.000   ~               0 
     /* Running multiple instances of the program ==> Drastically! reduced bandwidth.*/
     
     ////////////////////////////////
@@ -68,17 +68,17 @@ int main(int argc, char *argv[]){
     ////////////////////////////////
     /* Results of D block size testing */
     // Size (bytes)     ~   Bandwidth (named)
-    // 1                ~   2.000.000
-    // 10               ~   27.000.000
-    // 100              ~   130.000.600
-    // 1.000            ~   172.000.000
-    // 10.000           ~   245.000.000
-    // 100.000          ~   282.000.000          ! Maximum bandwidth achieved on our system.
-    // 1.000.000        ~   245.000.000
-    // 10.000.000       ~   260.000.000
-    // 100.000.000      ~   200.000.000   
-    // 1.000.000.000    ~   0 ! One package is too big to be sent in 1 sec, still transfers data, just not every second.          
-    // 10.000.000.000   ~   0            
+    // 1                ~       4 414 832
+    // 10               ~      35 698 130
+    // 100              ~     312 216 300
+    // 1.000            ~   3 278 431 000
+    // 10.000           ~   5 660 750 000        ! Maximum bandwidth achieved on our system.
+    // 100.000          ~   1 426 100 000  
+    // 1.000.000        ~     927 000 000
+    // 10.000.000       ~     900 000 000
+    // 100.000.000      ~     900 000 000 
+    // 1.000.000.000    ~               0 ! One package is too big to be sent in 1 sec, still transfers data, just not every second.          
+    // 10.000.000.000   ~               0            
     /* Running multiple instances of the program ==> Drastically! reduced bandwith.*/
     
     return 0;
@@ -106,8 +106,8 @@ int unnamed_pipe(size_t size){
                     perror("ERROR: read failed");
                     return -1;
                 }
-                bytes_read += (int)size;
-                cumulative_bytes_read += (int)size;
+                bytes_read += r;
+                cumulative_bytes_read += bytes_read;
                 /*We never use buff, and overwrite it each read as it is just fille with trash...*/
                 /** TASK A
                  * Uncomment to see cumulative number of received bytes
@@ -179,8 +179,8 @@ int named_pipe(size_t size){
                     return -1;
                 }
                 
-                bytes_read += (int)size;               /* is reset every alarm */
-                cumulative_bytes_read += (int)size;    /* cumulative no. bytes sent */
+                bytes_read += r;               /* is reset every alarm */
+                cumulative_bytes_read += r;    /* cumulative no. bytes sent */
                 /* we never use the buff, and overwrite it all the time, as it is filled with trash */
                 
             }
